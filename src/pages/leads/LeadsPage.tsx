@@ -75,21 +75,30 @@ export function LeadsPage() {
         responseType: 'blob',
       })
 
-      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' })
+      const csvText = await response.data.text()
+      const [headers = [], ...rows] = parseCsvRows(csvText)
+      const normalizedHeaders = headers.map((header) =>
+        header.replace(/^\uFEFF/, '').trim().toUpperCase()
+      )
+      const normalizedRows = rows.filter((row) => row.some((cell) => cell.trim().length > 0))
+
+      const blob = new Blob([buildExcelDocument(normalizedHeaders, normalizedRows)], {
+        type: 'application/vnd.ms-excel;charset=utf-8',
+      })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `leads-export-${new Date().toISOString().slice(0, 10)}.csv`
+      link.download = `leads-export-${new Date().toISOString().slice(0, 10)}.xls`
       document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
     },
     onSuccess: () => {
-      toast.success('Leadlar CSV fayl sifatida yuklab olindi')
+      toast.success('Leadlar Excel fayl sifatida yuklab olindi')
       setIsExportOpen(false)
     },
-    onError: () => toast.error('CSV eksportida xatolik yuz berdi'),
+    onError: () => toast.error('Excel eksportida xatolik yuz berdi'),
   })
 
   function openLead(row: Lead) {
@@ -189,7 +198,7 @@ export function LeadsPage() {
         </div>
         <button className="kas-btn-secondary gap-2 w-full sm:w-auto" onClick={() => setIsExportOpen(true)}>
           <Download size={14} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 
@@ -321,8 +330,8 @@ export function LeadsPage() {
 
       <ModalDialog
         open={isExportOpen}
-        title="Leadlarni CSV ga eksport qilish"
-        description="Joriy qidiruv bo'yicha backend CSV fayl qaytaradi."
+        title="Leadlarni Excel ga eksport qilish"
+        description="Header qatori katta harf va ko'k rang bilan Excel formatda yuklab olinadi."
         onClose={() => !exportMutation.isPending && setIsExportOpen(false)}
         className="max-w-lg"
         footer={
@@ -341,7 +350,7 @@ export function LeadsPage() {
               onClick={() => exportMutation.mutate()}
               disabled={exportMutation.isPending}
             >
-              {exportMutation.isPending ? 'Yuklanmoqda...' : 'CSV yuklab olish'}
+              {exportMutation.isPending ? 'Yuklanmoqda...' : 'Excel yuklab olish'}
             </button>
           </div>
         }
@@ -359,6 +368,115 @@ export function LeadsPage() {
       </ModalDialog>
     </div>
   )
+}
+
+const EXCEL_HEADER_STYLE = [
+  'background:#4472C4',
+  'color:#FFFFFF',
+  'font-weight:700',
+  'text-transform:uppercase',
+  'border:1px solid #D7DFEA',
+  'padding:8px 10px',
+  'white-space:nowrap',
+  "mso-number-format:'\\@'",
+].join(';')
+
+const EXCEL_CELL_STYLE = [
+  'border:1px solid #D7DFEA',
+  'padding:8px 10px',
+  'vertical-align:top',
+  "mso-number-format:'\\@'",
+].join(';')
+
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = []
+  let currentRow: string[] = []
+  let currentCell = ''
+  let inQuotes = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const nextChar = text[index + 1]
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"'
+        index += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell)
+      currentCell = ''
+      continue
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        index += 1
+      }
+      currentRow.push(currentCell)
+      rows.push(currentRow)
+      currentRow = []
+      currentCell = ''
+      continue
+    }
+
+    currentCell += char
+  }
+
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell)
+    rows.push(currentRow)
+  }
+
+  return rows
+}
+
+function buildExcelDocument(headers: string[], rows: string[][]): string {
+  const headerCells = headers
+    .map(
+      (header) =>
+        `<th bgcolor="#4472C4" style="${EXCEL_HEADER_STYLE}">${escapeExcelCell(header)}</th>`
+    )
+    .join('')
+
+  const bodyRows = rows
+    .map(
+      (row) =>
+        `<tr>${row
+          .map((cell) => `<td style="${EXCEL_CELL_STYLE}">${escapeExcelCell(cell)}</td>`)
+          .join('')}</tr>`
+    )
+    .join('')
+
+  return [
+    '\uFEFF',
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">',
+    '<head>',
+    '<meta charset="UTF-8" />',
+    '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />',
+    '<style>',
+    'table { border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11pt; }',
+    '</style>',
+    '</head>',
+    '<body>',
+    `<table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`,
+    '</body>',
+    '</html>',
+  ].join('')
+}
+
+function escapeExcelCell(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function Row({
