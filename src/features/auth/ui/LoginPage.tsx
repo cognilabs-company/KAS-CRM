@@ -7,8 +7,9 @@ import { useMutation } from '@tanstack/react-query'
 import { Eye, EyeOff, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
+import { warmUpAppCache } from '@shared/api/prefetch'
+import { mapAdminUser, type BackendAdminUserResponse, type BackendTokenResponse } from '@shared/api/backend'
 import { useAuthStore } from '@shared/lib/store'
-import type { LoginResponse } from '@shared/types/api'
 
 const schema = z.object({
   email: z.string().email("To'g'ri email kiriting"),
@@ -20,21 +21,45 @@ type FormData = z.infer<typeof schema>
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const navigate = useNavigate()
-  const setAuth = useAuthStore((s) => s.setAuth)
+  const setAuth = useAuthStore((state) => state.setAuth)
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
-  } = useForm<FormData>({ resolver: zodResolver(schema) })
+  } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  })
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const res = await api.post<LoginResponse>('/auth/login', data)
-      return res.data
+      const loginResponse = await api.post<BackendTokenResponse>('/admin/auth/login', data)
+      const meResponse = await api.get<BackendAdminUserResponse>('/admin/auth/me', {
+        headers: {
+          Authorization: `Bearer ${loginResponse.data.access_token}`,
+        },
+      })
+
+      return {
+        user: mapAdminUser(meResponse.data),
+        session: {
+          accessToken: loginResponse.data.access_token,
+          refreshToken: loginResponse.data.refresh_token,
+          expiresIn: loginResponse.data.expires_in,
+          refreshExpiresIn: loginResponse.data.refresh_expires_in,
+        },
+      }
     },
-    onSuccess: (data) => {
-      setAuth(data.user, data.token)
+    onSuccess: async (data) => {
+      const loadingToast = toast.loading("Ma'lumotlar tayyorlanmoqda...")
+      setAuth(data.user, data.session)
+      await warmUpAppCache(data.user.availablePages)
+      toast.dismiss(loadingToast)
       toast.success(`Xush kelibsiz, ${data.user.name}!`)
       navigate('/', { replace: true })
     },
@@ -43,16 +68,20 @@ export function LoginPage() {
     },
   })
 
+  const demoAccount = {
+    email: 'test1234567@gmail.com',
+    password: 'test1234',
+    label: 'Test Admin',
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background gradient */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
@@ -66,9 +95,8 @@ export function LoginPage() {
           <p className="text-text-secondary text-sm">Admin panelga kirish</p>
         </div>
 
-        {/* Card */}
         <div className="kas-card p-6">
-          <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          <form onSubmit={handleSubmit((formData) => mutation.mutate(formData))} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">
                 Email
@@ -93,13 +121,13 @@ export function LoginPage() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   {...register('password')}
-                  placeholder="••••••••"
+                  placeholder="********"
                   className="kas-input pr-10"
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword((v) => !v)}
+                  onClick={() => setShowPassword((value) => !value)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -119,34 +147,23 @@ export function LoginPage() {
             </button>
           </form>
 
-          {/* Demo credentials */}
           <div className="mt-5 pt-4 border-t border-border">
-            <p className="text-xs text-text-muted text-center mb-3">Demo akkauntlar</p>
-            <div className="space-y-1.5">
-              {[
-                { label: 'Super Admin', email: 'superadmin@kas.uz' },
-                { label: 'KAS Admin', email: 'admin@kas.uz' },
-              ].map((acc) => (
-                <div
-                  key={acc.email}
-                  className="flex items-center justify-between px-3 py-2 rounded-md bg-surface-2 cursor-pointer hover:bg-border/50 transition-colors"
-                  onClick={() => {
-                    const emailInput = document.querySelector<HTMLInputElement>(
-                      'input[type="email"]'
-                    )
-                    const passInput = document.querySelector<HTMLInputElement>(
-                      'input[type="password"], input[type="text"]'
-                    )
-                    if (emailInput) emailInput.value = acc.email
-                    if (passInput) passInput.value = 'admin123'
-                    mutation.mutate({ email: acc.email, password: 'admin123' })
-                  }}
-                >
-                  <span className="text-xs font-medium text-text-primary">{acc.label}</span>
-                  <span className="text-xs text-text-muted font-mono">{acc.email}</span>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-text-muted text-center mb-3">Test akkaunt</p>
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-surface-2 hover:bg-border/50 transition-colors"
+              onClick={() => {
+                setValue('email', demoAccount.email)
+                setValue('password', demoAccount.password)
+                mutation.mutate({
+                  email: demoAccount.email,
+                  password: demoAccount.password,
+                })
+              }}
+            >
+              <span className="text-xs font-medium text-text-primary">{demoAccount.label}</span>
+              <span className="text-xs text-text-muted font-mono">{demoAccount.email}</span>
+            </button>
           </div>
         </div>
       </div>

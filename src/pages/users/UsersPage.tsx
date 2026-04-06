@@ -1,11 +1,17 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { DataTable, type Column } from '@shared/ui/DataTable'
-import { SearchInput } from '@shared/ui/Controls'
-import { StatusBadge } from '@shared/ui/StatusBadge'
-import { formatRelative } from '@shared/lib/utils'
 import api from '@shared/api/axios'
-import type { BotUser, PaginatedResponse, UserStatus } from '@shared/types/api'
+import {
+  mapTelegramUser,
+  normalizePaginated,
+  type BackendPaginated,
+  type BackendTelegramUserListItem,
+} from '@shared/api/backend'
+import { formatRelative } from '@shared/lib/utils'
+import { SearchInput } from '@shared/ui/Controls'
+import { DataTable, type Column } from '@shared/ui/DataTable'
+import { StatusBadge } from '@shared/ui/StatusBadge'
+import type { BotUser, UserStatus } from '@shared/types/api'
 
 export function UsersPage() {
   const [page, setPage] = useState(1)
@@ -15,7 +21,16 @@ export function UsersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['users', page, search, status],
     queryFn: () =>
-      api.get<PaginatedResponse<BotUser>>('/users', { params: { page, limit: 20, search, status: status || undefined } }).then((r) => r.data),
+      api
+        .get<BackendPaginated<BackendTelegramUserListItem>>('/admin/users/', {
+          params: {
+            page,
+            size: 20,
+            search: search.trim() || undefined,
+            status: status || undefined,
+          },
+        })
+        .then((response) => normalizePaginated(response.data, mapTelegramUser)),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -38,12 +53,17 @@ export function UsersPage() {
     {
       key: 'phone',
       header: 'Telefon',
-      render: (row) => <span className="font-mono text-xs text-text-secondary">{row.phone ?? '—'}</span>,
+      render: (row) => <span className="font-mono text-xs text-text-secondary">{row.phone ?? '-'}</span>,
     },
     {
       key: 'leadsCount',
       header: 'Leadlar',
       render: (row) => <span className="font-bold text-primary">{row.leadsCount}</span>,
+    },
+    {
+      key: 'messageCount',
+      header: 'Xabarlar',
+      render: (row) => <span className="font-medium text-text-secondary">{row.messageCount}</span>,
     },
     {
       key: 'lastActiveAt',
@@ -58,17 +78,28 @@ export function UsersPage() {
   ]
 
   return (
-    <div className="p-6 max-w-content mx-auto">
+    <div className="p-4 sm:p-6 max-w-content mx-auto">
       <div className="page-header">
         <h1 className="page-title">Foydalanuvchilar</h1>
         <p className="page-subtitle">{data ? `Jami ${data.total} ta foydalanuvchi` : 'Yuklanmoqda...'}</p>
       </div>
-      <div className="flex items-center gap-3 mb-4">
-        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Ism, username yoki telefon..." className="w-72" />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchInput
+          value={search}
+          onChange={(value) => {
+            setSearch(value)
+            setPage(1)
+          }}
+          placeholder="Ism, username yoki telefon..."
+          className="w-full sm:w-72"
+        />
         <select
-          className="kas-input w-40"
+          className="kas-input w-full sm:w-40"
           value={status}
-          onChange={(e) => { setStatus(e.target.value); setPage(1) }}
+          onChange={(event) => {
+            setStatus(event.target.value)
+            setPage(1)
+          }}
         >
           <option value="">Barcha statuslar</option>
           <option value="active">Aktiv</option>
@@ -82,7 +113,17 @@ export function UsersPage() {
           data={data?.data ?? []}
           keyField="id"
           loading={isLoading}
-          pagination={data ? { page, totalPages: data.totalPages, total: data.total, limit: data.limit, onPageChange: setPage } : undefined}
+          pagination={
+            data
+              ? {
+                  page,
+                  totalPages: data.totalPages,
+                  total: data.total,
+                  limit: data.limit,
+                  onPageChange: setPage,
+                }
+              : undefined
+          }
           emptyMessage="Foydalanuvchi topilmadi"
         />
       </div>

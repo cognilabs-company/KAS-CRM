@@ -1,87 +1,102 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard,
-  Users,
-  MessageSquare,
-  Package,
-  MapPin,
-  UserCircle,
-  ScrollText,
-  Settings2,
   ChevronLeft,
   ChevronRight,
-  Zap,
+  LayoutDashboard,
   LogOut,
+  MapPin,
+  MessageSquare,
+  Package,
+  ScrollText,
+  Settings2,
+  UserCircle,
+  Users,
+  X,
+  Zap,
 } from 'lucide-react'
-import { cn } from '@shared/lib/utils'
-import { useUIStore, useAuthStore } from '@shared/lib/store'
-import { getInitials } from '@shared/lib/utils'
 import toast from 'react-hot-toast'
+import { cn, getInitials } from '@shared/lib/utils'
+import { useAuthStore, useUIStore } from '@shared/lib/store'
+import { useIsMobile } from '@shared/lib/useIsMobile'
+import type { AdminPage } from '@shared/types/api'
 
 interface NavItem {
   label: string
   path: string
   icon: typeof LayoutDashboard
-  roles?: string[]
+  pageKey: AdminPage
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',      path: '/',           icon: LayoutDashboard },
-  { label: 'Leadlar',        path: '/leads',      icon: Users },
-  { label: 'Chatlar',        path: '/chats',      icon: MessageSquare },
-  { label: 'Mahsulotlar',    path: '/products',   icon: Package },
-  { label: 'Magazinlar',     path: '/stores',     icon: MapPin },
-  { label: 'Foydalanuvchilar', path: '/users',    icon: UserCircle },
-  { label: 'AI Loglar',      path: '/ai-logs',    icon: ScrollText },
-  { label: 'AI Sozlamalar',  path: '/ai-settings', icon: Settings2, roles: ['super_admin'] },
+  { label: 'Dashboard', path: '/', icon: LayoutDashboard, pageKey: 'dashboard' },
+  { label: 'Leadlar', path: '/leads', icon: Users, pageKey: 'leads' },
+  { label: 'Chatlar', path: '/chats', icon: MessageSquare, pageKey: 'chats' },
+  { label: 'Mahsulotlar', path: '/products', icon: Package, pageKey: 'products' },
+  { label: 'Magazinlar', path: '/stores', icon: MapPin, pageKey: 'stores' },
+  { label: 'Foydalanuvchilar', path: '/users', icon: UserCircle, pageKey: 'users' },
+  { label: 'AI Loglar', path: '/ai-logs', icon: ScrollText, pageKey: 'ai_logs' },
+  { label: 'AI Sozlamalar', path: '/ai-settings', icon: Settings2, pageKey: 'ai_settings' },
 ]
 
-export function Sidebar() {
-  const { isSidebarCollapsed, toggleSidebar } = useUIStore()
-  const { user, logout } = useAuthStore()
-  const navigate = useNavigate()
+interface SidebarContentProps {
+  collapsed: boolean
+  availablePages: AdminPage[]
+  userName?: string
+  userRole?: string
+  onNavigate?: () => void
+  onLogout: () => void
+  onToggleDesktop?: () => void
+  mobile?: boolean
+}
 
-  const handleLogout = () => {
-    logout()
-    toast.success('Chiqildi')
-    navigate('/login')
-  }
-
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.roles || (user && item.roles.includes(user.role))
-  )
+function SidebarContent({
+  collapsed,
+  availablePages,
+  userName,
+  userRole,
+  onNavigate,
+  onLogout,
+  onToggleDesktop,
+  mobile = false,
+}: SidebarContentProps) {
+  const visibleItems = NAV_ITEMS.filter((item) => availablePages.includes(item.pageKey))
 
   return (
-    <aside
-      className={cn(
-        'sidebar-transition flex-shrink-0 flex flex-col',
-        'bg-surface border-r border-border h-screen sticky top-0 z-30',
-        isSidebarCollapsed ? 'w-16' : 'w-60'
-      )}
-    >
-      {/* Logo */}
+    <>
       <div
         className={cn(
-          'flex items-center gap-2.5 px-4 h-14 border-b border-border flex-shrink-0',
-          isSidebarCollapsed && 'justify-center px-0'
+          'flex items-center gap-2.5 border-b border-border flex-shrink-0',
+          mobile ? 'h-14 px-4 justify-between' : 'h-14 px-4',
+          collapsed && !mobile && 'justify-center px-0'
         )}
       >
-        <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-          <Zap size={14} className="text-white" />
-        </div>
-        {!isSidebarCollapsed && (
-          <div className="overflow-hidden">
-            <p className="text-sm font-bold text-text-primary leading-tight whitespace-nowrap">
-              KAS CRM
-            </p>
-            <p className="text-xs text-text-muted leading-tight whitespace-nowrap">
-              by Cognilabs
-            </p>
+        <div className={cn('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
+          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+            <Zap size={14} className="text-white" />
           </div>
-        )}
+          {(!collapsed || mobile) && (
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-text-primary leading-tight whitespace-nowrap">
+                KAS CRM
+              </p>
+              <p className="text-xs text-text-muted leading-tight whitespace-nowrap">
+                by Cognilabs
+              </p>
+            </div>
+          )}
+        </div>
+
+        {mobile ? (
+          <button
+            onClick={onNavigate}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-text-muted hover:bg-surface-2 hover:text-text-primary"
+            aria-label="Menyuni yopish"
+          >
+            <X size={18} />
+          </button>
+        ) : null}
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
         <ul className="space-y-0.5 px-2">
           {visibleItems.map((item) => (
@@ -89,29 +104,25 @@ export function Sidebar() {
               <NavLink
                 to={item.path}
                 end={item.path === '/'}
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 px-2.5 py-2 rounded-md text-sm font-medium transition-all duration-150',
                     isActive
                       ? 'bg-primary/10 text-primary'
                       : 'text-text-secondary hover:text-text-primary hover:bg-surface-2',
-                    isSidebarCollapsed && 'justify-center px-0 w-10 mx-auto'
+                    collapsed && !mobile && 'justify-center px-0 w-10 mx-auto'
                   )
                 }
-                title={isSidebarCollapsed ? item.label : undefined}
+                title={collapsed && !mobile ? item.label : undefined}
               >
                 {({ isActive }) => (
                   <>
                     <item.icon
                       size={18}
-                      className={cn(
-                        'flex-shrink-0',
-                        isActive ? 'text-primary' : 'text-text-muted'
-                      )}
+                      className={cn('flex-shrink-0', isActive ? 'text-primary' : 'text-text-muted')}
                     />
-                    {!isSidebarCollapsed && (
-                      <span className="truncate">{item.label}</span>
-                    )}
+                    {(!collapsed || mobile) && <span className="truncate">{item.label}</span>}
                   </>
                 )}
               </NavLink>
@@ -120,31 +131,29 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* User + Collapse */}
       <div className="border-t border-border flex-shrink-0">
-        {/* User info */}
         <div
           className={cn(
             'flex items-center gap-2.5 px-3 py-3',
-            isSidebarCollapsed && 'justify-center px-0'
+            collapsed && !mobile && 'justify-center px-0'
           )}
         >
           <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
             <span className="text-xs font-bold text-primary">
-              {user ? getInitials(user.name) : 'U'}
+              {userName ? getInitials(userName) : 'U'}
             </span>
           </div>
-          {!isSidebarCollapsed && user && (
+          {(!collapsed || mobile) && userName ? (
             <div className="flex-1 overflow-hidden">
-              <p className="text-xs font-semibold text-text-primary truncate">{user.name}</p>
+              <p className="text-xs font-semibold text-text-primary truncate">{userName}</p>
               <p className="text-xs text-text-muted truncate">
-                {user.role === 'super_admin' ? 'Super Admin' : 'KAS Admin'}
+                {userRole === 'superadmin' ? 'Super Admin' : 'Admin'}
               </p>
             </div>
-          )}
-          {!isSidebarCollapsed && (
+          ) : null}
+          {(!collapsed || mobile) && (
             <button
-              onClick={handleLogout}
+              onClick={onLogout}
               className="p-1 text-text-muted hover:text-danger transition-colors"
               title="Chiqish"
             >
@@ -153,25 +162,91 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Collapse toggle */}
-        <button
-          onClick={toggleSidebar}
+        {!mobile && (
+          <button
+            onClick={onToggleDesktop}
+            className={cn(
+              'hidden md:flex w-full items-center justify-center gap-2 py-2.5 px-3',
+              'text-xs text-text-muted hover:text-text-primary hover:bg-surface-2',
+              'border-t border-border transition-colors'
+            )}
+          >
+            {collapsed ? (
+              <ChevronRight size={14} />
+            ) : (
+              <>
+                <ChevronLeft size={14} />
+                <span>Yig&apos;ish</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
+export function Sidebar() {
+  const isMobile = useIsMobile()
+  const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed)
+  const isMobileSidebarOpen = useUIStore((state) => state.isMobileSidebarOpen)
+  const toggleSidebar = useUIStore((state) => state.toggleSidebar)
+  const closeMobileSidebar = useUIStore((state) => state.closeMobileSidebar)
+  const user = useAuthStore((state) => state.user)
+  const logout = useAuthStore((state) => state.logout)
+  const availablePages = useAuthStore((state) =>
+    state.availablePages.length > 0 ? state.availablePages : state.user?.availablePages ?? []
+  )
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    closeMobileSidebar()
+    toast.success('Chiqildi')
+    navigate('/login', { replace: true })
+  }
+
+  return (
+    <>
+      {!isMobile ? (
+        <aside
           className={cn(
-            'w-full flex items-center justify-center gap-2 py-2.5 px-3',
-            'text-xs text-text-muted hover:text-text-primary hover:bg-surface-2',
-            'border-t border-border transition-colors'
+            'sticky top-0 z-30 hidden h-screen flex-col bg-surface border-r border-border flex-shrink-0 md:flex',
+            isSidebarCollapsed ? 'w-16' : 'w-60'
           )}
         >
-          {isSidebarCollapsed ? (
-            <ChevronRight size={14} />
-          ) : (
-            <>
-              <ChevronLeft size={14} />
-              <span>Yig'ish</span>
-            </>
-          )}
-        </button>
-      </div>
-    </aside>
+          <SidebarContent
+            collapsed={isSidebarCollapsed}
+            availablePages={availablePages}
+            userName={user?.name}
+            userRole={user?.role}
+            onLogout={handleLogout}
+            onToggleDesktop={toggleSidebar}
+          />
+        </aside>
+      ) : null}
+
+      <div
+        className={cn(
+          'fixed inset-0 z-40 bg-black/50 transition-opacity',
+          isMobileSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+        onClick={closeMobileSidebar}
+      />
+
+      {isMobile && isMobileSidebarOpen ? (
+        <aside className="fixed inset-y-0 left-0 z-50 flex w-[280px] max-w-[82vw] flex-col bg-surface border-r border-border">
+          <SidebarContent
+            collapsed={false}
+            availablePages={availablePages}
+            userName={user?.name}
+            userRole={user?.role}
+            onNavigate={closeMobileSidebar}
+            onLogout={handleLogout}
+            mobile
+          />
+        </aside>
+      ) : null}
+    </>
   )
 }

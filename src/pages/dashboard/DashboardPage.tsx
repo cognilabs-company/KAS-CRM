@@ -1,20 +1,29 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ArrowRight, Clock, MapPin, MessageSquare, TrendingUp, Users } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
-  Users, MessageSquare, MapPin, TrendingUp,
-  ArrowRight, Clock,
-} from 'lucide-react'
-import { Link } from 'react-router-dom'
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis,
-  Tooltip, ResponsiveContainer, CartesianGrid,
+  Bar,
+  BarChart,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts'
 import api from '@shared/api/axios'
-import { MetricCard } from '@shared/ui/MetricCard'
+import {
+  mapDashboardStats,
+  mapLeadListItem,
+  mapLeadsDynamics,
+  mapRegionData,
+  mapTopProducts,
+  type BackendDashboardStatsResponse,
+  type BackendLeadsDynamicsResponse,
+} from '@shared/api/backend'
 import { formatDate, formatRelative, truncate } from '@shared/lib/utils'
-import type {
-  DashboardStats, ChartDataPoint, RegionData, TopProduct, Lead,
-} from '@shared/types/api'
+import { MetricCard } from '@shared/ui/MetricCard'
 
 const CHART_STYLE = {
   tooltip: {
@@ -33,49 +42,43 @@ type Period = '7d' | '30d'
 
 export function DashboardPage() {
   const [period, setPeriod] = useState<Period>('7d')
+  const navigate = useNavigate()
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: statsResponse, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
-    queryFn: () => api.get<DashboardStats>('/dashboard/stats').then((r) => r.data),
+    queryFn: () =>
+      api.get<BackendDashboardStatsResponse>('/admin/dashboard/stats').then((response) => response.data),
     staleTime: 5 * 60 * 1000,
   })
 
   const { data: leadsChart } = useQuery({
     queryKey: ['dashboard-leads-chart', period],
     queryFn: () =>
-      api.get<ChartDataPoint[]>(`/dashboard/chart/leads?period=${period}`).then((r) => r.data),
+      api
+        .get<BackendLeadsDynamicsResponse>('/admin/dashboard/leads-dynamics', {
+          params: { days: period === '7d' ? 7 : 30 },
+        })
+        .then((response) => mapLeadsDynamics(response.data)),
     staleTime: 5 * 60 * 1000,
   })
 
-  const { data: regionsChart } = useQuery({
-    queryKey: ['dashboard-regions'],
-    queryFn: () => api.get<RegionData[]>('/dashboard/chart/regions').then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  })
+  const stats = statsResponse ? mapDashboardStats(statsResponse) : null
+  const regionsChart = statsResponse ? mapRegionData(statsResponse.leads_by_district) : []
+  const topProducts = statsResponse ? mapTopProducts(statsResponse.top_products) : []
+  const recentLeads = statsResponse?.recent_leads.map(mapLeadListItem) ?? []
 
-  const { data: topProducts } = useQuery({
-    queryKey: ['dashboard-top-products'],
-    queryFn: () => api.get<TopProduct[]>('/dashboard/top-products').then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: recentLeads, isLoading: leadsLoading } = useQuery({
-    queryKey: ['recent-leads'],
-    queryFn: () =>
-      api.get<{ data: Lead[] }>('/leads?limit=10').then((r) => r.data.data),
-    staleTime: 5 * 60 * 1000,
-  })
+  function openLeadDetails(leadId: string) {
+    navigate(`/leads?leadId=${encodeURIComponent(leadId)}`)
+  }
 
   return (
-    <div className="p-6 max-w-content mx-auto space-y-6">
-      {/* Page header */}
+    <div className="p-4 sm:p-6 max-w-content mx-auto space-y-4 sm:space-y-6">
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
         <p className="page-subtitle">KAS CRM tizimiga xush kelibsiz</p>
       </div>
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <MetricCard
           title="Bugungi Leadlar"
           value={stats?.todayLeads ?? 0}
@@ -86,7 +89,7 @@ export function DashboardPage() {
         />
         <MetricCard
           title="Jami Foydalanuvchilar"
-          value={stats ? `${(stats.totalUsers / 1000).toFixed(1)}k` : '0'}
+          value={stats?.totalUsers ?? 0}
           trend={stats?.totalUsersTrend}
           icon={Users}
           iconColor="text-success"
@@ -110,37 +113,34 @@ export function DashboardPage() {
         />
       </div>
 
-      {/* Charts row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Leads dynamics */}
         <div className="kas-card p-5 xl:col-span-2">
-          <div className="flex items-center justify-between mb-5">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-sm font-semibold text-text-primary">Leadlar dinamikasi</h2>
-              <p className="text-xs text-text-muted mt-0.5">Vaqt bo'yicha so'rovlar</p>
+              <p className="text-xs text-text-muted mt-0.5">Vaqt bo&apos;yicha so&apos;rovlar</p>
             </div>
-            <div className="flex items-center gap-1 bg-surface-2 rounded-md p-0.5">
-              {(['7d', '30d'] as Period[]).map((p) => (
+            <div className="flex w-full sm:w-auto items-center gap-1 bg-surface-2 rounded-md p-0.5">
+              {(['7d', '30d'] as Period[]).map((value) => (
                 <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    period === p
+                  key={value}
+                  onClick={() => setPeriod(value)}
+                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    period === value
                       ? 'bg-primary text-white'
                       : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
-                  {p === '7d' ? '7 kun' : '30 kun'}
+                  {value === '7d' ? '7 kun' : '30 kun'}
                 </button>
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <LineChart data={leadsChart ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A2A3A" />
               <XAxis
                 dataKey="date"
-                tickFormatter={(v: string) => v.slice(5)}
+                tickFormatter={(value: string) => value.slice(5)}
                 tick={{ fill: '#8B8BA0', fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
@@ -153,8 +153,10 @@ export function DashboardPage() {
               />
               <Tooltip
                 {...CHART_STYLE.tooltip}
-                labelFormatter={(v: string) => formatDate(v)}
-                formatter={(v: number) => [v, 'Leadlar']}
+                labelFormatter={(value: unknown) =>
+                  typeof value === 'string' || value instanceof Date ? formatDate(value) : String(value)
+                }
+                formatter={(value: number) => [value, 'Leadlar']}
               />
               <Line
                 type="monotone"
@@ -168,34 +170,33 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Top products */}
         <div className="kas-card p-5">
           <div className="mb-5">
-            <h2 className="text-sm font-semibold text-text-primary">Eng ko'p so'ralgan</h2>
+            <h2 className="text-sm font-semibold text-text-primary">Eng ko&apos;p so&apos;ralgan</h2>
             <p className="text-xs text-text-muted mt-0.5">Top 5 mahsulot</p>
           </div>
-          {topProducts ? (
+          {topProducts.length > 0 ? (
             <div className="space-y-3">
-              {topProducts.map((prod, i) => {
+              {topProducts.map((product, index) => {
                 const max = topProducts[0]?.requests ?? 1
-                const pct = Math.round((prod.requests / max) * 100)
+                const percent = Math.round((product.requests / max) * 100)
                 return (
-                  <div key={prod.id}>
+                  <div key={product.id}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-text-muted w-4">{i + 1}</span>
-                        <span className="text-xs text-text-primary truncate max-w-[140px]">
-                          {prod.name}
+                        <span className="text-xs font-mono text-text-muted w-4">{index + 1}</span>
+                        <span className="text-xs text-text-primary truncate max-w-[220px] sm:max-w-[180px]">
+                          {product.name}
                         </span>
                       </div>
                       <span className="text-xs font-medium text-text-secondary">
-                        {prod.requests}
+                        {product.requests}
                       </span>
                     </div>
                     <div className="h-1 bg-surface-2 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
+                        style={{ width: `${percent}%` }}
                       />
                     </div>
                   </div>
@@ -203,27 +204,18 @@ export function DashboardPage() {
               })}
             </div>
           ) : (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="h-3 bg-surface-2 rounded w-3/4 mb-1" />
-                  <div className="h-1 bg-surface-2 rounded" />
-                </div>
-              ))}
-            </div>
+            <div className="text-sm text-text-muted">Mahsulot statistikasi topilmadi</div>
           )}
         </div>
       </div>
 
-      {/* Regions bar chart */}
       <div className="kas-card p-5">
         <div className="mb-5">
-          <h2 className="text-sm font-semibold text-text-primary">Hududlar bo'yicha leadlar</h2>
-          <p className="text-xs text-text-muted mt-0.5">Toshkent tumanlari bo'yicha taqsimot</p>
+          <h2 className="text-sm font-semibold text-text-primary">Hududlar bo&apos;yicha leadlar</h2>
+          <p className="text-xs text-text-muted mt-0.5">Tumanlar bo&apos;yicha taqsimot</p>
         </div>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={regionsChart ?? []} barSize={24}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2A2A3A" vertical={false} />
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={regionsChart} barSize={24}>
             <XAxis
               dataKey="district"
               tick={{ fill: '#8B8BA0', fontSize: 11 }}
@@ -238,25 +230,24 @@ export function DashboardPage() {
             />
             <Tooltip
               {...CHART_STYLE.tooltip}
-              formatter={(v: number) => [v, 'Leadlar']}
+              formatter={(value: number) => [value, 'Leadlar']}
             />
             <Bar dataKey="leads" fill="#4F6EF7" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Recent leads table */}
       <div className="kas-card">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-border">
           <div>
-            <h2 className="text-sm font-semibold text-text-primary">So'nggi leadlar</h2>
-            <p className="text-xs text-text-muted mt-0.5">Oxirgi 10 ta so'rov</p>
+            <h2 className="text-sm font-semibold text-text-primary">So&apos;nggi leadlar</h2>
+            <p className="text-xs text-text-muted mt-0.5">Oxirgi so&apos;rovlar</p>
           </div>
           <Link
             to="/leads"
             className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
           >
-            Barchasini ko'rish <ArrowRight size={12} />
+            Barchasini ko&apos;rish <ArrowRight size={12} />
           </Link>
         </div>
         <div className="overflow-x-auto">
@@ -271,18 +262,18 @@ export function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {leadsLoading
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="!cursor-default">
-                      {Array.from({ length: 5 }).map((__, j) => (
-                        <td key={j}>
+              {statsLoading
+                ? Array.from({ length: 5 }).map((_, index) => (
+                    <tr key={index} className="!cursor-default">
+                      {Array.from({ length: 5 }).map((__, cellIndex) => (
+                        <td key={cellIndex}>
                           <div className="h-4 bg-surface-2 rounded animate-pulse w-3/4" />
                         </td>
                       ))}
                     </tr>
                   ))
-                : recentLeads?.map((lead) => (
-                    <tr key={lead.id}>
+                : recentLeads.map((lead) => (
+                    <tr key={lead.id} onClick={() => openLeadDetails(lead.id)}>
                       <td>
                         <span className="font-mono text-xs text-text-muted">
                           {lead.id.slice(-6)}
@@ -298,12 +289,12 @@ export function DashboardPage() {
                       </td>
                       <td>
                         <div className="flex flex-wrap gap-1">
-                          {lead.products.slice(0, 2).map((p) => (
+                          {lead.products.slice(0, 2).map((product) => (
                             <span
-                              key={p.id}
+                              key={product.id}
                               className="kas-badge bg-surface-2 text-text-secondary text-xs"
                             >
-                              {truncate(p.name, 18)}
+                              {truncate(product.name, 18)}
                             </span>
                           ))}
                           {lead.products.length > 2 && (
@@ -315,7 +306,7 @@ export function DashboardPage() {
                       </td>
                       <td>
                         <span className="text-text-secondary">
-                          {lead.nearestStore?.name ?? '—'}
+                          {lead.nearestStore?.name ?? '-'}
                         </span>
                       </td>
                       <td>

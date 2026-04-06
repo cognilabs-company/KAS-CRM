@@ -36,7 +36,7 @@ export function SearchInput({
       />
       <input
         type="text"
-        defaultValue={value}
+        value={value}
         onChange={handleChange}
         placeholder={placeholder}
         className="kas-input pl-9 pr-8"

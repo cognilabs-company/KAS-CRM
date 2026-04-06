@@ -1,13 +1,24 @@
-// ─── Auth ────────────────────────────────────────────────────────────────────
+export type UserRole = 'superadmin' | 'admin'
 
-export type UserRole = 'super_admin' | 'kas_admin'
+export type AdminPage =
+  | 'dashboard'
+  | 'leads'
+  | 'chats'
+  | 'products'
+  | 'stores'
+  | 'users'
+  | 'ai_logs'
+  | 'ai_settings'
 
 export interface AuthUser {
   id: string
   email: string
   name: string
+  fullName: string
   role: UserRole
-  avatar?: string
+  isActive: boolean
+  createdAt: string
+  availablePages: AdminPage[]
 }
 
 export interface LoginRequest {
@@ -15,12 +26,12 @@ export interface LoginRequest {
   password: string
 }
 
-export interface LoginResponse {
-  token: string
-  user: AuthUser
+export interface AuthSession {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  refreshExpiresIn: number
 }
-
-// ─── Pagination ───────────────────────────────────────────────────────────────
 
 export interface PaginatedResponse<T> {
   data: T[]
@@ -35,17 +46,15 @@ export interface PaginationParams {
   limit?: number
 }
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
-
 export interface DashboardStats {
   todayLeads: number
-  todayLeadsTrend: number
+  todayLeadsTrend?: number
   totalUsers: number
-  totalUsersTrend: number
+  totalUsersTrend?: number
   activeChats: number
-  activeChatsTrend: number
+  activeChatsTrend?: number
   totalStores: number
-  totalStoresTrend: number
+  totalStoresTrend?: number
 }
 
 export interface ChartDataPoint {
@@ -65,13 +74,15 @@ export interface TopProduct {
   category: string
 }
 
-// ─── Lead ─────────────────────────────────────────────────────────────────────
-
 export interface Lead {
   id: string
   chatUserId?: string
   telegramId: string
+  userId?: string
+  storeId?: string
   username?: string
+  firstName?: string
+  lastName?: string
   fullName: string
   phone?: string
   location?: {
@@ -85,7 +96,7 @@ export interface Lead {
   }
   products: Array<{ id: string; name: string }>
   aiSummary: string
-  source: 'telegram_bot'
+  source: string
   createdAt: string
   updatedAt: string
 }
@@ -99,8 +110,6 @@ export interface LeadFilters extends PaginationParams {
   to?: string
 }
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
-
 export type MessageType = 'user' | 'bot' | 'voice' | 'system'
 
 export type SystemEventType =
@@ -113,42 +122,44 @@ export interface ChatMessage {
   id: string
   type: MessageType
   content: string
-  transcript?: string // for voice
+  transcript?: string
   systemEvent?: SystemEventType
-  storeName?: string // for store_assigned / lead_created
   timestamp: string
-  isRead?: boolean
 }
 
 export interface ChatUser {
   id: string
+  userId: string
   leadId?: string
-  telegramId: string
+  telegramId?: string
   username?: string
+  firstName?: string
+  lastName?: string
   fullName: string
-  avatar?: string
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
   hasVoice: boolean
   hasLead: boolean
+  messageCount: number
+  startedAt: string
 }
 
 export interface ChatFilters extends PaginationParams {
   search?: string
   hasVoice?: boolean
   hasLead?: boolean
+  userId?: string
 }
 
-// ─── Product ──────────────────────────────────────────────────────────────────
-
-export type ProductType = 'fiting' | 'truba' | 'boshqa'
+export type ProductType = 'fiting' | 'truba' | 'other'
 
 export type ApplicationArea =
   | 'issiq_suv'
   | 'sovuq_suv'
   | 'kanalizatsiya'
   | 'isitish'
+  | string
 
 export interface Product {
   id: string
@@ -158,15 +169,18 @@ export interface Product {
   type: ProductType
   size?: string
   material?: string
+  usageArea?: ApplicationArea
   applicationAreas: ApplicationArea[]
   pressureSpec?: string
   temperatureSpec?: string
   description?: string
   imageUrl?: string
+  imageUrls?: string[]
   price?: number
   alternatives: Array<{ id: string; name: string }>
   isActive: boolean
   createdAt: string
+  updatedAt?: string
 }
 
 export interface ProductFilters extends PaginationParams {
@@ -176,14 +190,13 @@ export interface ProductFilters extends PaginationParams {
   active?: boolean
 }
 
-// ─── Store ────────────────────────────────────────────────────────────────────
-
 export interface Store {
   id: string
   name: string
   contactPerson: string
   phone: string
   phoneAlt?: string
+  phoneSecondary?: string
   address: string
   district: string
   location: {
@@ -193,12 +206,15 @@ export interface Store {
   workingHours?: {
     from: string
     to: string
+    raw: string
   }
-  productTypes?: ProductType[]
-  telegramId?: string
+  productTypes?: Partial<Record<ProductType, boolean>>
+  telegramId?: string | number
+  telegramGroupId?: string | number
   leadsCount: number
   isActive: boolean
   createdAt: string
+  updatedAt?: string
 }
 
 export interface StoreFilters extends PaginationParams {
@@ -206,8 +222,6 @@ export interface StoreFilters extends PaginationParams {
   district?: string
   active?: boolean
 }
-
-// ─── User ─────────────────────────────────────────────────────────────────────
 
 export type UserStatus = 'active' | 'blocked' | 'test'
 
@@ -219,10 +233,12 @@ export interface BotUser {
   lastName?: string
   phone?: string
   leadsCount: number
+  messageCount: number
   lastActiveAt: string
   status: UserStatus
   interests: string[]
   createdAt: string
+  updatedAt?: string
 }
 
 export interface UserFilters extends PaginationParams {
@@ -232,8 +248,6 @@ export interface UserFilters extends PaginationParams {
   to?: string
 }
 
-// ─── AI Logs ──────────────────────────────────────────────────────────────────
-
 export type AiLogStatus = 'success' | 'error'
 
 export interface AiLog {
@@ -241,11 +255,12 @@ export interface AiLog {
   userId: string
   userName: string
   question: string
-  answer: string
-  knowledgeBaseSource?: string
+  answer?: string
   responseTimeMs: number
   promptTokens: number
   completionTokens: number
+  totalTokens: number
+  modelUsed: string
   status: AiLogStatus
   errorMessage?: string
   createdAt: string
@@ -265,23 +280,20 @@ export interface AiLogFilters extends PaginationParams {
   minResponseTime?: number
 }
 
-// ─── AI Settings ─────────────────────────────────────────────────────────────
+export interface PromptVersion {
+  id: string
+  version: number
+  content: string
+  isCurrent: boolean
+  createdAt: string
+}
 
-export interface AiSettings {
-  systemPrompt: string
-  promptVersions: Array<{
-    version: number
-    content: string
-    createdAt: string
-  }>
-  logic: {
-    locationTrigger: 'after_consultation' | 'always' | 'never'
-    leadCreationTrigger: 'after_location' | 'always'
-    maxConsultationLength: number
-    fallbackResponse: string
-  }
-  blacklist: {
-    words: string[]
-    restrictedCategories: string[]
-  }
+export interface AISettingItem {
+  id: string
+  key: string
+  value: string
+  description?: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }

@@ -54,6 +54,7 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   ::-webkit-scrollbar {
@@ -146,18 +147,20 @@
 
 /* Sidebar transition */
 .sidebar-transition {
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Leaflet dark overrides */
-.leaflet-container {
-  background: rgb(var(--surface)) !important;
-}
+@media (max-width: 767px) {
+  .kas-table th,
+  .kas-table td {
+    padding: 0.75rem;
+    white-space: nowrap;
+  }
 
-.leaflet-tile-pane {
-  filter: brightness(0.9);
-}
-
-[data-theme='light'] .leaflet-tile-pane {
-  filter: none;
+  .page-title {
+    font-size: 1.75rem;
+    line-height: 1.1;
+  }
 }

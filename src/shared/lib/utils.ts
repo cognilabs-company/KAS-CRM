@@ -1,36 +1,49 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns'
+import { format, formatDistanceToNow, isToday, isValid, isYesterday, parseISO } from 'date-fns'
 import { uz } from 'date-fns/locale'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+function toValidDate(date: string | Date): Date | null {
+  const parsed = typeof date === 'string' ? parseISO(date) : date
+  if (isValid(parsed)) return parsed
+
+  const fallback = typeof date === 'string' ? new Date(date) : date
+  return isValid(fallback) ? fallback : null
+}
+
 export function formatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toValidDate(date)
+  if (!d) return typeof date === 'string' ? date : '-'
   return format(d, 'dd.MM.yyyy')
 }
 
 export function formatDateTime(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toValidDate(date)
+  if (!d) return typeof date === 'string' ? date : '-'
   return format(d, 'dd.MM.yyyy HH:mm')
 }
 
 export function formatTime(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toValidDate(date)
+  if (!d) return typeof date === 'string' ? date : '-'
   return format(d, 'HH:mm')
 }
 
 export function formatRelative(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toValidDate(date)
+  if (!d) return typeof date === 'string' ? date : '-'
   if (isToday(d)) return `Bugun, ${format(d, 'HH:mm')}`
   if (isYesterday(d)) return `Kecha, ${format(d, 'HH:mm')}`
   return formatDistanceToNow(d, { addSuffix: true, locale: uz })
 }
 
 export function formatChatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toValidDate(date)
+  if (!d) return typeof date === 'string' ? date : '-'
   if (isToday(d)) return 'Bugun'
   if (isYesterday(d)) return 'Kecha'
   return format(d, 'd MMMM', { locale: uz })

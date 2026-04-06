@@ -1,12 +1,22 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, ExternalLink, Filter, Mic, Send } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Filter, Mic, Send } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@shared/api/axios'
+import {
+  mapChatListItem,
+  mapChatMessage,
+  normalizePaginated,
+  type BackendChatListItem,
+  type BackendChatMessageResponse,
+  type BackendChatResponse,
+  type BackendPaginated,
+} from '@shared/api/backend'
 import { useUIStore } from '@shared/lib/store'
+import { useIsMobile } from '@shared/lib/useIsMobile'
 import { cn, formatChatDate, formatTime, getInitials, truncate } from '@shared/lib/utils'
 import { SearchInput } from '@shared/ui/Controls'
-import type { ChatMessage, ChatUser, PaginatedResponse } from '@shared/types/api'
+import type { ChatMessage, ChatUser } from '@shared/types/api'
 
 type ChatFilter = 'all' | 'voice' | 'lead'
 
@@ -17,102 +27,113 @@ const FILTER_LABELS: Record<ChatFilter, string> = {
 }
 
 export function ChatsPage() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialSearch = searchParams.get('search') ?? ''
+  const routedChatId = searchParams.get('chatId')
   const routedUserId = searchParams.get('userId')
 
   const [search, setSearch] = useState(initialSearch)
   const [filter, setFilter] = useState<ChatFilter>('all')
-  const [activeUserId, setActiveUserId] = useState<string | null>(routedUserId)
+  const [activeChatId, setActiveChatId] = useState<string | null>(routedChatId)
   const [messageInput, setMessageInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const suppressRouteSyncRef = useRef(false)
 
-  const qc = useQueryClient()
+  const queryClient = useQueryClient()
   const deferredSearch = useDeferredValue(search)
-  const readChatIds = useUIStore((s) => s.readChatIds)
-  const markChatRead = useUIStore((s) => s.markChatRead)
-  const markNotificationSeen = useUIStore((s) => s.markNotificationSeen)
+  const markChatRead = useUIStore((state) => state.markChatRead)
+  const markNotificationSeen = useUIStore((state) => state.markNotificationSeen)
 
   useEffect(() => {
     setSearch(initialSearch)
   }, [initialSearch])
 
   useEffect(() => {
-    if (routedUserId) {
-      setActiveUserId(routedUserId)
+    if (suppressRouteSyncRef.current) {
+      if (!routedChatId) {
+        suppressRouteSyncRef.current = false
+      }
+      return
     }
-  }, [routedUserId])
 
-  const { data: usersData } = useQuery({
-    queryKey: ['chats', deferredSearch, filter],
+    if (routedChatId) {
+      setActiveChatId(routedChatId)
+    }
+  }, [routedChatId])
+
+  const { data: chatsData } = useQuery({
+    queryKey: ['chats', deferredSearch, filter, routedUserId],
     queryFn: () =>
       api
-        .get<PaginatedResponse<ChatUser>>('/chats', {
+        .get<BackendPaginated<BackendChatListItem>>('/admin/chats/', {
           params: {
             page: 1,
-            limit: 100,
+            size: 100,
             search: deferredSearch || undefined,
-            hasVoice: filter === 'voice' ? true : undefined,
-            hasLead: filter === 'lead' ? true : undefined,
+            has_voice: filter === 'voice' ? true : undefined,
+            has_lead: filter === 'lead' ? true : undefined,
+            user_id: routedUserId || undefined,
           },
         })
-        .then((r) => r.data),
+        .then((response) => normalizePaginated(response.data, mapChatListItem)),
     staleTime: 30_000,
   })
 
-  const { data: routedUser } = useQuery({
-    queryKey: ['chat-user', routedUserId],
-    queryFn: () => api.get<ChatUser>(`/chats/${routedUserId}`).then((r) => r.data),
-    enabled: !!routedUserId,
-  })
+  const chats = chatsData?.data ?? []
 
-  const users = useMemo(() => {
-    const list = usersData?.data ?? []
-    if (!routedUser) return list
-    return list.some((user) => user.id === routedUser.id)
-      ? list
-      : [routedUser, ...list]
-  }, [routedUser, usersData?.data])
+  useEffect(() => {
+    if (isMobile) return
+    if (activeChatId || chats.length === 0) return
+    const firstChatId = chats[0]?.id
+    if (!firstChatId) return
+    setActiveChatId(firstChatId)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('chatId', firstChatId)
+    setSearchParams(nextParams, { replace: true })
+  }, [activeChatId, chats, isMobile, searchParams, setSearchParams])
 
-  const activeUser = useMemo(() => {
-    if (!activeUserId) return null
-    return users.find((user) => user.id === activeUserId) ?? null
-  }, [activeUserId, users])
+  const activeChat = useMemo(() => {
+    if (!activeChatId) return null
+    return chats.find((chat) => chat.id === activeChatId) ?? null
+  }, [activeChatId, chats])
 
-  const { data: messages, isLoading: msgsLoading } = useQuery({
-    queryKey: ['chat-messages', activeUserId],
+  const { data: chatDetail, isLoading: messagesLoading } = useQuery({
+    queryKey: ['chat-detail', activeChatId],
     queryFn: () =>
-      api
-        .get<{ data: ChatMessage[] }>(`/chats/${activeUserId}/messages`)
-        .then((r) => r.data.data),
-    enabled: !!activeUserId,
+      api.get<BackendChatResponse>(`/admin/chats/${activeChatId}`).then((response) => response.data),
+    enabled: Boolean(activeChatId),
   })
+
+  const messages: ChatMessage[] = useMemo(
+    () => (chatDetail?.messages ?? []).map((message: BackendChatMessageResponse) => mapChatMessage(message)),
+    [chatDetail?.messages]
+  )
 
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
-      api.post(`/chats/${activeUserId}/send`, { content }).then((r) => r.data),
+      api
+        .post(`/admin/chats/${activeChatId}/messages`, { content })
+        .then((response) => response.data),
     onSuccess: () => {
       setMessageInput('')
-      qc.invalidateQueries({ queryKey: ['chat-messages', activeUserId] })
-      qc.invalidateQueries({ queryKey: ['chats'] })
-      qc.invalidateQueries({ queryKey: ['header-notification-chats'] })
+      queryClient.invalidateQueries({ queryKey: ['chat-detail', activeChatId] })
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
     },
   })
 
   useEffect(() => {
-    if (!activeUserId) return
-    markChatRead(activeUserId)
-    markNotificationSeen(`chat:${activeUserId}`)
-  }, [activeUserId, markChatRead, markNotificationSeen])
+    if (!activeChatId) return
+    markChatRead(activeChatId)
+    markNotificationSeen(`chat:${activeChatId}`)
+  }, [activeChatId, markChatRead, markNotificationSeen])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [messages])
 
   const groupedMessages = useMemo(() => {
-    if (!messages) return []
-
     const groups: { date: string; messages: ChatMessage[] }[] = []
     messages.forEach((message) => {
       const date = formatChatDate(message.timestamp)
@@ -126,38 +147,49 @@ export function ChatsPage() {
     return groups
   }, [messages])
 
-  function effectiveUnreadCount(user: ChatUser) {
-    return readChatIds.includes(user.id) ? 0 : user.unreadCount
-  }
-
-  function handleSelectUser(user: ChatUser) {
-    setActiveUserId(user.id)
-    markChatRead(user.id)
-    markNotificationSeen(`chat:${user.id}`)
+  function handleSelectChat(chat: ChatUser) {
+    suppressRouteSyncRef.current = false
+    setActiveChatId(chat.id)
+    markChatRead(chat.id)
+    markNotificationSeen(`chat:${chat.id}`)
 
     const nextParams = new URLSearchParams(searchParams)
-    nextParams.set('userId', user.id)
+    nextParams.set('chatId', chat.id)
     if (search.trim()) nextParams.set('search', search.trim())
     else nextParams.delete('search')
+    startTransition(() => {
+      setSearchParams(nextParams, { replace: true })
+    })
+  }
+
+  function closeActiveChat() {
+    suppressRouteSyncRef.current = true
+    setActiveChatId(null)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('chatId')
     setSearchParams(nextParams, { replace: true })
   }
 
+  const showChatList = !isMobile || !activeChat
+  const showChatDetail = !isMobile || Boolean(activeChat)
+
   return (
-    <div className="flex h-[calc(100vh-56px)]">
-      <div className="w-80 flex-shrink-0 border-r border-border flex flex-col bg-surface">
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
+      {showChatList ? (
+      <div className={cn('flex flex-col border-r border-border bg-surface', isMobile ? 'w-full' : 'w-80 flex-shrink-0')}>
         <div className="p-3 border-b border-border space-y-2">
           <SearchInput
             value={search}
             onChange={setSearch}
             placeholder="Ism yoki username bo'yicha qidirish..."
           />
-          <div className="flex gap-1">
+          <div className="grid grid-cols-3 gap-1">
             {(Object.keys(FILTER_LABELS) as ChatFilter[]).map((value) => (
               <button
                 key={value}
                 onClick={() => setFilter(value)}
                 className={cn(
-                  'flex-1 px-2 py-1 rounded text-xs font-medium transition-colors',
+                  'min-h-10 px-2 py-1 rounded text-[11px] sm:text-xs font-medium transition-colors text-center leading-tight',
                   filter === value
                     ? 'bg-primary/15 text-primary'
                     : 'text-text-muted hover:text-text-primary hover:bg-surface-2'
@@ -170,69 +202,70 @@ export function ChatsPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {users.map((user) => {
-            const unreadCount = effectiveUnreadCount(user)
-
-            return (
-              <button
-                key={user.id}
-                onClick={() => handleSelectUser(user)}
-                className={cn(
-                  'w-full flex items-start gap-3 px-4 py-3 text-left transition-colors border-b border-border/50',
-                  activeUser?.id === user.id
-                    ? 'bg-primary/10 border-l-2 border-l-primary'
-                    : 'hover:bg-surface-2'
-                )}
-              >
-                <div className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-xs font-bold text-text-secondary">
-                    {getInitials(user.fullName)}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className="text-sm font-medium text-text-primary truncate">
-                      {user.fullName}
-                    </p>
-                    <span className="text-xs text-text-muted flex-shrink-0 ml-1">
-                      {formatTime(user.lastMessageTime)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-text-muted truncate max-w-[170px]">
-                      {truncate(user.lastMessage, 38)}
-                    </p>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {user.hasVoice && <Mic size={10} className="text-warning" />}
-                      {unreadCount > 0 && (
-                        <>
-                          <Bell size={11} className="text-primary" />
-                          <span className="bg-primary text-white text-xs rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center font-medium">
-                            {unreadCount}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {activeUser ? (
-        <div className="flex-1 flex flex-col min-w-0 bg-background">
-          <div className="h-14 border-b border-border flex items-center justify-between px-5 flex-shrink-0 bg-surface">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center">
+          {chats.map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() => handleSelectChat(chat)}
+              className={cn(
+                'w-full flex items-start gap-3 px-3 sm:px-4 py-3 text-left transition-colors border-b border-border/50',
+                activeChat?.id === chat.id
+                  ? 'bg-primary/10 border-l-2 border-l-primary'
+                  : 'hover:bg-surface-2'
+              )}
+            >
+              <div className="w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <span className="text-xs font-bold text-text-secondary">
-                  {getInitials(activeUser.fullName)}
+                  {getInitials(chat.fullName)}
                 </span>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-text-primary">{activeUser.fullName}</p>
-                {activeUser.hasLead && (
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-0.5">
+                  <p className="text-sm font-medium text-text-primary truncate">
+                    {chat.fullName}
+                  </p>
+                  <span className="text-xs text-text-muted flex-shrink-0 ml-1">
+                    {formatTime(chat.lastMessageTime)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-text-muted truncate max-w-[150px] sm:max-w-[170px]">
+                    {truncate(chat.lastMessage, 38)}
+                  </p>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {chat.hasVoice && <Mic size={10} className="text-warning" />}
+                    {chat.hasLead && (
+                      <span className="kas-badge bg-success/10 text-success text-[10px]">
+                        Lead
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+      ) : null}
+
+      {showChatDetail && activeChat && chatDetail ? (
+        <div className="flex w-full min-w-0 flex-1 flex-col bg-background">
+          <div className="h-14 border-b border-border flex items-center justify-between px-3 sm:px-5 flex-shrink-0 bg-surface gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <button
+                onClick={closeActiveChat}
+                className="kas-btn-ghost rounded-md p-1.5 md:hidden"
+                aria-label="Chatlar ro'yxatiga qaytish"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center">
+                <span className="text-xs font-bold text-text-secondary">
+                  {getInitials(activeChat.fullName)}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary truncate">{activeChat.fullName}</p>
+                {activeChat.hasLead && (
                   <span className="kas-badge bg-success/10 text-success border border-success/20 text-xs">
                     Lead yaratilgan
                   </span>
@@ -240,19 +273,19 @@ export function ChatsPage() {
               </div>
             </div>
 
-            {activeUser.leadId && (
+            {activeChat.leadId && (
               <button
-                onClick={() => navigate(`/leads?leadId=${activeUser.leadId}`)}
-                className="kas-btn-ghost gap-1 text-xs"
+                onClick={() => navigate(`/leads?leadId=${activeChat.leadId}`)}
+                className="kas-btn-ghost gap-1 text-xs px-2 sm:px-3"
               >
                 <ExternalLink size={13} />
-                Lead ko'rish
+                <span className="hidden sm:inline">Lead ko'rish</span>
               </button>
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-1">
-            {msgsLoading ? (
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1">
+            {messagesLoading ? (
               <div className="flex items-center justify-center h-full">
                 <p className="text-text-muted text-sm">Yuklanmoqda...</p>
               </div>
@@ -276,18 +309,18 @@ export function ChatsPage() {
                       )
                     }
 
-                    const isAI = message.type === 'bot'
+                    const isBot = message.type === 'bot'
                     const isVoice = message.type === 'voice'
 
                     return (
                       <div
                         key={message.id}
-                        className={cn('flex mb-1', isAI ? 'justify-end' : 'justify-start')}
+                        className={cn('flex mb-1', isBot ? 'justify-end' : 'justify-start')}
                       >
                         <div
                           className={cn(
-                            'max-w-sm rounded-xl px-4 py-2.5 text-sm',
-                            isAI
+                            'max-w-[85%] sm:max-w-sm rounded-xl px-4 py-2.5 text-sm',
+                            isBot
                               ? 'bg-primary text-white rounded-br-sm'
                               : 'bg-surface-2 text-text-primary rounded-bl-sm'
                           )}
@@ -310,7 +343,7 @@ export function ChatsPage() {
                           <p
                             className={cn(
                               'text-xs mt-1 text-right',
-                              isAI ? 'text-white/60' : 'text-text-muted'
+                              isBot ? 'text-white/60' : 'text-text-muted'
                             )}
                           >
                             {formatTime(message.timestamp)}
@@ -325,7 +358,7 @@ export function ChatsPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 border-t border-border flex-shrink-0 bg-surface">
+          <div className="p-3 sm:p-4 border-t border-border flex-shrink-0 bg-surface">
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -353,7 +386,7 @@ export function ChatsPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center bg-background">
+        <div className="hidden flex-1 items-center justify-center bg-background md:flex">
           <div className="text-center">
             <div className="w-14 h-14 rounded-xl bg-surface flex items-center justify-center mx-auto mb-3">
               <Filter size={24} className="text-text-muted" />

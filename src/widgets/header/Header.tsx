@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
   ChevronRight,
+  Menu,
   MessageSquare,
   Moon,
   Package,
@@ -14,9 +15,24 @@ import {
   X,
 } from 'lucide-react'
 import api from '@shared/api/axios'
+import {
+  mapChatListItem,
+  mapDashboardStats,
+  mapLeadListItem,
+  mapProductListItem,
+  mapStoreListItem,
+  normalizePaginated,
+  type BackendChatListItem,
+  type BackendDashboardStatsResponse,
+  type BackendLeadListItem,
+  type BackendPaginated,
+  type BackendProductListItem,
+  type BackendStoreListItem,
+} from '@shared/api/backend'
 import { useAuthStore, useUIStore } from '@shared/lib/store'
+import { useIsMobile } from '@shared/lib/useIsMobile'
 import { formatRelative, getInitials, truncate } from '@shared/lib/utils'
-import type { ChatUser, Lead, PaginatedResponse, Product, Store } from '@shared/types/api'
+import type { ChatUser, Lead, Product, Store } from '@shared/types/api'
 
 const ROUTE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
@@ -30,38 +46,10 @@ const ROUTE_LABELS: Record<string, string> = {
 }
 
 type SearchResult =
-  | {
-      id: string
-      kind: 'chat'
-      title: string
-      subtitle: string
-      meta: string
-      href: string
-    }
-  | {
-      id: string
-      kind: 'lead'
-      title: string
-      subtitle: string
-      meta: string
-      href: string
-    }
-  | {
-      id: string
-      kind: 'product'
-      title: string
-      subtitle: string
-      meta: string
-      href: string
-    }
-  | {
-      id: string
-      kind: 'store'
-      title: string
-      subtitle: string
-      meta: string
-      href: string
-    }
+  | { id: string; kind: 'chat'; title: string; subtitle: string; meta: string; href: string }
+  | { id: string; kind: 'lead'; title: string; subtitle: string; meta: string; href: string }
+  | { id: string; kind: 'product'; title: string; subtitle: string; meta: string; href: string }
+  | { id: string; kind: 'store'; title: string; subtitle: string; meta: string; href: string }
 
 function useOutsideClick(
   ref: RefObject<HTMLElement>,
@@ -83,14 +71,15 @@ function useOutsideClick(
 }
 
 export function Header() {
+  const isMobile = useIsMobile()
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const user = useAuthStore((s) => s.user)
-  const theme = useUIStore((s) => s.theme)
-  const toggleTheme = useUIStore((s) => s.toggleTheme)
-  const readChatIds = useUIStore((s) => s.readChatIds)
-  const seenNotificationKeys = useUIStore((s) => s.seenNotificationKeys)
-  const markNotificationSeen = useUIStore((s) => s.markNotificationSeen)
+  const user = useAuthStore((state) => state.user)
+  const theme = useUIStore((state) => state.theme)
+  const toggleTheme = useUIStore((state) => state.toggleTheme)
+  const toggleMobileSidebar = useUIStore((state) => state.toggleMobileSidebar)
+  const seenNotificationKeys = useUIStore((state) => state.seenNotificationKeys)
+  const markNotificationSeen = useUIStore((state) => state.markNotificationSeen)
 
   const [search, setSearch] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -111,40 +100,40 @@ export function Header() {
         queryKey: ['header-search-chats', deferredSearch],
         queryFn: () =>
           api
-            .get<PaginatedResponse<ChatUser>>('/chats', {
-              params: { search: deferredSearch, page: 1, limit: 5 },
+            .get<BackendPaginated<BackendChatListItem>>('/admin/chats/', {
+              params: { search: deferredSearch, page: 1, size: 5 },
             })
-            .then((r) => r.data),
+            .then((response) => normalizePaginated(response.data, mapChatListItem)),
         enabled: deferredSearch.length >= 2,
       },
       {
         queryKey: ['header-search-leads', deferredSearch],
         queryFn: () =>
           api
-            .get<PaginatedResponse<Lead>>('/leads', {
-              params: { search: deferredSearch, page: 1, limit: 5 },
+            .get<BackendPaginated<BackendLeadListItem>>('/admin/leads/', {
+              params: { search: deferredSearch, page: 1, size: 5 },
             })
-            .then((r) => r.data),
+            .then((response) => normalizePaginated(response.data, mapLeadListItem)),
         enabled: deferredSearch.length >= 2,
       },
       {
         queryKey: ['header-search-products', deferredSearch],
         queryFn: () =>
           api
-            .get<PaginatedResponse<Product>>('/products', {
-              params: { search: deferredSearch, page: 1, limit: 4 },
+            .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
+              params: { search: deferredSearch, page: 1, size: 4 },
             })
-            .then((r) => r.data),
+            .then((response) => normalizePaginated(response.data, mapProductListItem)),
         enabled: deferredSearch.length >= 2,
       },
       {
         queryKey: ['header-search-stores', deferredSearch],
         queryFn: () =>
           api
-            .get<PaginatedResponse<Store>>('/stores', {
-              params: { search: deferredSearch, page: 1, limit: 4 },
+            .get<BackendPaginated<BackendStoreListItem>>('/admin/stores/', {
+              params: { search: deferredSearch, page: 1, size: 4 },
             })
-            .then((r) => r.data),
+            .then((response) => normalizePaginated(response.data, mapStoreListItem)),
         enabled: deferredSearch.length >= 2,
       },
     ],
@@ -155,16 +144,16 @@ export function Header() {
   const searchResults = useMemo<SearchResult[]>(() => {
     if (deferredSearch.length < 2) return []
 
-    const chats = (chatsResult.data?.data ?? []).map<SearchResult>((chat) => ({
+    const chats = (chatsResult.data?.data ?? []).map<SearchResult>((chat: ChatUser) => ({
       id: chat.id,
       kind: 'chat',
       title: chat.fullName,
       subtitle: chat.username ? `@${chat.username}` : 'Chat',
       meta: truncate(chat.lastMessage, 42),
-      href: `/chats?userId=${chat.id}`,
+      href: `/chats?chatId=${chat.id}`,
     }))
 
-    const leads = (leadsResult.data?.data ?? []).map<SearchResult>((lead) => ({
+    const leads = (leadsResult.data?.data ?? []).map<SearchResult>((lead: Lead) => ({
       id: lead.id,
       kind: 'lead',
       title: lead.fullName,
@@ -173,7 +162,7 @@ export function Header() {
       href: `/leads?leadId=${lead.id}`,
     }))
 
-    const products = (productsResult.data?.data ?? []).map<SearchResult>((product) => ({
+    const products = (productsResult.data?.data ?? []).map<SearchResult>((product: Product) => ({
       id: product.id,
       kind: 'product',
       title: product.name,
@@ -182,7 +171,7 @@ export function Header() {
       href: `/products?search=${encodeURIComponent(product.name)}`,
     }))
 
-    const stores = (storesResult.data?.data ?? []).map<SearchResult>((store) => ({
+    const stores = (storesResult.data?.data ?? []).map<SearchResult>((store: Store) => ({
       id: store.id,
       kind: 'store',
       title: store.name,
@@ -200,45 +189,39 @@ export function Header() {
     storesResult.data?.data,
   ])
 
-  const notificationsChatsQuery = useQuery({
-    queryKey: ['header-notification-chats'],
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard-stats'],
     queryFn: () =>
       api
-        .get<PaginatedResponse<ChatUser>>('/chats', { params: { page: 1, limit: 100 } })
-        .then((r) => r.data),
-    staleTime: 30_000,
+        .get<BackendDashboardStatsResponse>('/admin/dashboard/stats')
+        .then((response) => response.data),
   })
 
-  const notificationsLeadsQuery = useQuery({
-    queryKey: ['header-notification-leads'],
+  const chatsNotificationsQuery = useQuery({
+    queryKey: ['chats', '', 'all', null],
     queryFn: () =>
       api
-        .get<PaginatedResponse<Lead>>('/leads', { params: { page: 1, limit: 8 } })
-        .then((r) => r.data),
-    staleTime: 30_000,
+        .get<BackendPaginated<BackendChatListItem>>('/admin/chats/', {
+          params: { page: 1, size: 100 },
+        })
+        .then((response) => normalizePaginated(response.data, mapChatListItem)),
   })
-
-  const unreadChatNotifications = useMemo(() => {
-    return (notificationsChatsQuery.data?.data ?? [])
-      .map((chat) => ({
-        ...chat,
-        effectiveUnread: readChatIds.includes(chat.id) ? 0 : chat.unreadCount,
-      }))
-      .filter(
-        (chat) =>
-          chat.effectiveUnread > 0 &&
-          !seenNotificationKeys.includes(`chat:${chat.id}`)
-      )
-      .slice(0, 5)
-  }, [notificationsChatsQuery.data?.data, readChatIds, seenNotificationKeys])
 
   const leadNotifications = useMemo(() => {
-    return (notificationsLeadsQuery.data?.data ?? [])
+    return (dashboardQuery.data?.recent_leads ?? [])
+      .map(mapLeadListItem)
       .filter((lead) => !seenNotificationKeys.includes(`lead:${lead.id}`))
       .slice(0, 4)
-  }, [notificationsLeadsQuery.data?.data, seenNotificationKeys])
+  }, [dashboardQuery.data?.recent_leads, seenNotificationKeys])
 
-  const notificationCount = unreadChatNotifications.length + leadNotifications.length
+  const chatNotifications = useMemo(() => {
+    return (chatsNotificationsQuery.data?.data ?? [])
+      .filter((chat) => !seenNotificationKeys.includes(`chat:${chat.id}`))
+      .slice(0, 4)
+  }, [chatsNotificationsQuery.data?.data, seenNotificationKeys])
+
+  const notificationCount = leadNotifications.length + chatNotifications.length
+  const dashboardStats = dashboardQuery.data ? mapDashboardStats(dashboardQuery.data) : null
 
   function handleSearchResultClick(result: SearchResult) {
     setSearch('')
@@ -249,7 +232,7 @@ export function Header() {
   function handleChatNotificationClick(chatId: string) {
     markNotificationSeen(`chat:${chatId}`)
     setIsNotificationsOpen(false)
-    navigate(`/chats?userId=${chatId}`)
+    navigate(`/chats?chatId=${chatId}`)
   }
 
   function handleLeadNotificationClick(leadId: string) {
@@ -260,13 +243,25 @@ export function Header() {
 
   return (
     <header className="h-14 bg-surface border-b border-border sticky top-0 z-20 flex-shrink-0">
-      <div className="h-full flex items-center justify-between gap-4 px-6 max-w-content mx-auto">
-        <div className="flex items-center gap-1.5 text-sm min-w-0">
+      <div className="h-full flex items-center justify-between gap-3 px-4 sm:px-6 max-w-content mx-auto">
+        <div className="flex items-center gap-2 min-w-0">
+          {isMobile ? (
+            <button
+              onClick={toggleMobileSidebar}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary hover:bg-surface-2 hover:text-text-primary"
+              aria-label="Menyuni ochish"
+            >
+              <Menu size={18} />
+            </button>
+          ) : null}
+
+          <div className="flex items-center gap-1.5 text-sm min-w-0">
           <span className="text-text-muted">KAS CRM</span>
           <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
           <span className="font-medium text-text-primary truncate">
             {segments.length === 0 ? 'Dashboard' : pageLabel}
           </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -361,16 +356,20 @@ export function Header() {
               <div className="absolute top-[calc(100%+8px)] right-0 w-[360px] kas-card shadow-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-border">
                   <p className="text-sm font-semibold text-text-primary">Notifications</p>
-                  <p className="text-xs text-text-muted">Yangi chatlar va leadlar</p>
+                  <p className="text-xs text-text-muted">
+                    {dashboardStats
+                      ? `Bugun ${dashboardStats.todayLeads} ta lead va ${dashboardStats.activeChats} ta faol chat`
+                      : 'Yangi chatlar va leadlar'}
+                  </p>
                 </div>
 
                 {notificationCount === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-text-muted">
-                    Hozircha yangi notification yo'q
+                    Hozircha yangi notification yo&apos;q
                   </div>
                 ) : (
                   <div className="max-h-[420px] overflow-y-auto">
-                    {unreadChatNotifications.map((chat) => (
+                    {chatNotifications.map((chat) => (
                       <button
                         key={`chat:${chat.id}`}
                         onClick={() => handleChatNotificationClick(chat.id)}
@@ -385,7 +384,7 @@ export function Header() {
                               {chat.fullName}
                             </p>
                             <span className="text-[11px] text-primary font-semibold">
-                              {chat.effectiveUnread} ta yangi
+                              Chat
                             </span>
                           </div>
                           <p className="text-xs text-text-secondary truncate">
@@ -438,10 +437,10 @@ export function Header() {
                   {getInitials(user.name)}
                 </span>
               </div>
-              <div className="hidden md:block">
+              <div className="hidden lg:block">
                 <p className="text-xs font-medium text-text-primary leading-tight">{user.name}</p>
                 <p className="text-xs text-text-muted leading-tight">
-                  {user.role === 'super_admin' ? 'Super Admin' : 'KAS Admin'}
+                  {user.role === 'superadmin' ? 'Super Admin' : 'Admin'}
                 </p>
               </div>
             </div>

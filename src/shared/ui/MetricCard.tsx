@@ -41,9 +41,9 @@ export function MetricCard({
   )
 
   return (
-    <div className="kas-card p-5 group hover:border-primary/30 transition-colors">
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+    <div className="kas-card p-4 sm:p-5 group hover:border-primary/30 transition-colors">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <p className="text-[11px] sm:text-xs font-medium text-text-secondary uppercase tracking-wider">
           {title}
         </p>
         <div
@@ -58,11 +58,11 @@ export function MetricCard({
 
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-2xl font-bold text-text-primary mb-1">{value}</p>
+          <p className="text-xl sm:text-2xl font-bold text-text-primary mb-1">{value}</p>
           {trend !== undefined && (
             <div
               className={cn(
-                'flex items-center gap-1 text-xs font-medium',
+                'flex items-center gap-1 text-[11px] sm:text-xs font-medium',
                 isPositive ? 'text-success' : 'text-danger'
               )}
             >
@@ -75,7 +75,7 @@ export function MetricCard({
           )}
         </div>
 
-        <div className="w-20 h-10 opacity-70">
+        <div className="w-16 sm:w-20 h-10 opacity-70">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={sparkData}>
               <Line
