@@ -93,7 +93,7 @@ export interface BackendTelegramUserListItem {
   id: string
   telegram_id: number
   username?: string | null
-  first_name: string
+  first_name?: string | null
   last_name?: string | null
   phone?: string | null
   status: 'active' | 'blocked' | 'test'
@@ -593,7 +593,7 @@ export function mapTelegramUser(item: BackendTelegramUserListItem): BotUser {
     id: item.id,
     telegramId: String(item.telegram_id),
     username: item.username ?? undefined,
-    firstName: item.first_name,
+    firstName: item.first_name ?? '',
     lastName: item.last_name ?? undefined,
     phone: item.phone ?? undefined,
     leadsCount: item.leads_count,

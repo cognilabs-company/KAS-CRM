@@ -40,6 +40,10 @@ const INITIAL_USER_FORM: UserFormState = {
   status: 'active',
 }
 
+function safeTrim(value?: string | null) {
+  return (value ?? '').trim()
+}
+
 export function UsersPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -109,7 +113,7 @@ export function UsersPage() {
   useEffect(() => {
     if (!selectedUser) return
     setForm({
-      firstName: selectedUser.firstName,
+      firstName: selectedUser.firstName ?? '',
       lastName: selectedUser.lastName ?? '',
       username: selectedUser.username ?? '',
       phone: selectedUser.phone ?? '',
@@ -121,10 +125,10 @@ export function UsersPage() {
     mutationFn: (payload: UserFormState) =>
       api
         .patch<BackendTelegramUserResponse>(`/admin/users/${selectedUserId}`, {
-          first_name: payload.firstName.trim(),
-          last_name: payload.lastName.trim() || undefined,
-          username: payload.username.trim() || undefined,
-          phone: payload.phone.trim() || undefined,
+          first_name: safeTrim(payload.firstName),
+          last_name: safeTrim(payload.lastName) || undefined,
+          username: safeTrim(payload.username) || undefined,
+          phone: safeTrim(payload.phone) || undefined,
           status: payload.status,
         })
         .then((response) => response.data),
@@ -162,7 +166,7 @@ export function UsersPage() {
   function openEditDialog() {
     if (!selectedUser) return
     setForm({
-      firstName: selectedUser.firstName,
+      firstName: selectedUser.firstName ?? '',
       lastName: selectedUser.lastName ?? '',
       username: selectedUser.username ?? '',
       phone: selectedUser.phone ?? '',
@@ -455,7 +459,7 @@ export function UsersPage() {
               type="button"
               className="kas-btn-primary"
               onClick={() => updateMutation.mutate(form)}
-              disabled={updateMutation.isPending || !form.firstName.trim()}
+              disabled={updateMutation.isPending || !safeTrim(form.firstName)}
             >
               {updateMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
