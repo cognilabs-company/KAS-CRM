@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CheckCircle, Clock, XCircle, Zap } from 'lucide-react'
+import { CheckCircle, Clock, X, XCircle, Zap } from 'lucide-react'
 import api from '@shared/api/axios'
 import {
   mapAiLog,
   mapAiLogStats,
   normalizePaginated,
   type BackendAiLogListItem,
+  type BackendAiLogResponse,
   type BackendAiLogStatsResponse,
   type BackendPaginated,
 } from '@shared/api/backend'
-import { formatRelative, truncate } from '@shared/lib/utils'
+import { formatDateTime, formatRelative, truncate } from '@shared/lib/utils'
 import { MetricCard } from '@shared/ui/MetricCard'
 import { DataTable, type Column } from '@shared/ui/DataTable'
 import { StatusBadge } from '@shared/ui/StatusBadge'
@@ -19,6 +20,7 @@ import type { AiLog } from '@shared/types/api'
 export function AiLogsPage() {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['ai-logs', page, status],
@@ -42,6 +44,15 @@ export function AiLogsPage() {
         .get<BackendAiLogStatsResponse>('/admin/ai-logs/stats')
         .then((response) => mapAiLogStats(response.data)),
     staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: selectedLog, isLoading: isLogLoading } = useQuery({
+    queryKey: ['ai-log', selectedLogId],
+    queryFn: () =>
+      api
+        .get<BackendAiLogResponse>(`/admin/ai-logs/${selectedLogId}`)
+        .then((response) => mapAiLog(response.data)),
+    enabled: Boolean(selectedLogId),
   })
 
   const columns: Column<AiLog>[] = [
@@ -119,6 +130,7 @@ export function AiLogsPage() {
           data={data?.data ?? []}
           keyField="id"
           loading={isLoading}
+          onRowClick={(row) => setSelectedLogId(row.id)}
           pagination={
             data
               ? {
@@ -133,6 +145,88 @@ export function AiLogsPage() {
           emptyMessage="Log topilmadi"
         />
       </div>
+
+      {selectedLogId && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setSelectedLogId(null)} />
+          <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-surface">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">AI log tafsilotlari</h2>
+                {selectedLog && (
+                  <p className="mt-1 text-xs font-mono text-text-muted">
+                    #{selectedLog.id.slice(-6).toUpperCase()}
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setSelectedLogId(null)} className="kas-btn-ghost rounded-md p-1.5">
+                <X size={18} />
+              </button>
+            </div>
+
+            {isLogLoading || !selectedLog ? (
+              <div className="flex flex-1 items-center justify-center p-6 text-sm text-text-muted">
+                Yuklanmoqda...
+              </div>
+            ) : (
+              <div className="space-y-5 p-5">
+                <div className="kas-card p-4 space-y-2.5">
+                  <DrawerRow label="Foydalanuvchi" value={selectedLog.userName} />
+                  <DrawerRow label="Model" value={selectedLog.modelUsed} mono />
+                  <DrawerRow label="Status" value={selectedLog.status} />
+                  <DrawerRow label="Response time" value={`${selectedLog.responseTimeMs}ms`} mono />
+                  <DrawerRow label="Tokenlar" value={String(selectedLog.totalTokens)} mono />
+                  <DrawerRow label="Yaratilgan" value={formatDateTime(selectedLog.createdAt)} />
+                </div>
+
+                <div className="kas-card p-4">
+                  <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-text-muted">
+                    Prompt
+                  </h3>
+                  <pre className="whitespace-pre-wrap rounded-xl bg-surface-2 p-3 font-mono text-xs text-text-secondary">
+                    {selectedLog.question}
+                  </pre>
+                </div>
+
+                <div className="kas-card p-4">
+                  <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-text-muted">
+                    Javob
+                  </h3>
+                  <pre className="whitespace-pre-wrap rounded-xl bg-surface-2 p-3 font-mono text-xs text-text-secondary">
+                    {selectedLog.answer ?? "Javob yo'q"}
+                  </pre>
+                </div>
+
+                {selectedLog.errorMessage && (
+                  <div className="rounded-xl border border-danger/30 bg-danger/10 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wider text-danger">Xatolik</p>
+                    <p className="mt-2 text-sm text-danger">{selectedLog.errorMessage}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DrawerRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-xs text-text-muted">{label}</span>
+      <span className={`text-right text-sm text-text-primary ${mono ? 'font-mono' : 'font-medium'}`}>
+        {value}
+      </span>
     </div>
   )
 }

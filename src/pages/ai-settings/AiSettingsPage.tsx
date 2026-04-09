@@ -1,24 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { Bot, CheckCircle2, Plus, RefreshCw, RotateCcw, Save, ShieldAlert, Trash2, Unplug } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
 import {
   mapAiSetting,
+  mapBotWebhookInfo,
   type BackendAiSettingResponse,
   type BackendPromptVersionResponse,
+  type BackendWebhookInfoResponse,
 } from '@shared/api/backend'
 import { formatDateTime, truncate } from '@shared/lib/utils'
 import { ModalDialog } from '@shared/ui/ModalDialog'
-import type { AISettingItem, PromptVersion } from '@shared/types/api'
+import type { AISettingItem, BotWebhookInfo, PromptVersion } from '@shared/types/api'
 
-type Tab = 'prompt' | 'settings'
+type Tab = 'prompt' | 'settings' | 'webhook'
 
 interface SettingFormState {
   key: string
   value: string
   description: string
   isActive: boolean
+}
+
+interface OperationResponse {
+  message?: string
+}
+
+interface WebhookInfoRowProps {
+  label: string
+  value: ReactNode
+  mono?: boolean
 }
 
 const INITIAL_SETTING_FORM: SettingFormState = {
@@ -38,12 +50,32 @@ function mapPromptVersion(item: BackendPromptVersionResponse): PromptVersion {
   }
 }
 
+function WebhookInfoRow({ label, value, mono = false }: WebhookInfoRowProps) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-4">
+      <p className="text-xs font-medium uppercase tracking-wider text-text-muted">{label}</p>
+      <div
+        className={`mt-2 break-all text-sm text-text-primary ${
+          mono ? 'font-mono text-xs sm:text-sm' : ''
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function formatWebhookDate(date?: string) {
+  return date ? formatDateTime(date) : '-'
+}
+
 export function AiSettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('prompt')
   const [promptValue, setPromptValue] = useState('')
   const [isSettingModalOpen, setIsSettingModalOpen] = useState(false)
   const [editingSetting, setEditingSetting] = useState<AISettingItem | null>(null)
   const [settingForm, setSettingForm] = useState<SettingFormState>(INITIAL_SETTING_FORM)
+  const [dropPendingUpdates, setDropPendingUpdates] = useState(false)
   const queryClient = useQueryClient()
 
   const promptQuery = useQuery({
@@ -70,11 +102,38 @@ export function AiSettingsPage() {
         .then((response) => response.data.map(mapAiSetting)),
   })
 
+  const settingByKeyQuery = useQuery({
+    queryKey: ['ai-setting-by-key', editingSetting?.key],
+    queryFn: () =>
+      api
+        .get<BackendAiSettingResponse>(`/admin/ai-settings/key/${editingSetting?.key}`)
+        .then((response) => mapAiSetting(response.data)),
+    enabled: Boolean(isSettingModalOpen && editingSetting?.key),
+  })
+
+  const webhookInfoQuery = useQuery({
+    queryKey: ['bot-webhook-info'],
+    queryFn: () =>
+      api
+        .get<BackendWebhookInfoResponse>('/bot/webhook-info')
+        .then((response) => mapBotWebhookInfo(response.data)),
+  })
+
   useEffect(() => {
     if (promptQuery.data) {
       setPromptValue(promptQuery.data.content)
     }
   }, [promptQuery.data])
+
+  useEffect(() => {
+    if (!settingByKeyQuery.data) return
+    setSettingForm({
+      key: settingByKeyQuery.data.key,
+      value: settingByKeyQuery.data.value,
+      description: settingByKeyQuery.data.description ?? '',
+      isActive: settingByKeyQuery.data.isActive,
+    })
+  }, [settingByKeyQuery.data])
 
   const promptMutation = useMutation({
     mutationFn: (content: string) =>
@@ -132,6 +191,32 @@ export function AiSettingsPage() {
     onError: () => toast.error("Sozlamani o'chirib bo'lmadi"),
   })
 
+  const setWebhookMutation = useMutation({
+    mutationFn: () =>
+      api
+        .post<OperationResponse>('/bot/set-webhook')
+        .then((response) => response.data.message ?? 'Webhook Telegramga ulandi'),
+    onSuccess: (message) => {
+      toast.success(message)
+      queryClient.invalidateQueries({ queryKey: ['bot-webhook-info'] })
+    },
+    onError: () => toast.error('Webhookni Telegramga ulab bo‘lmadi'),
+  })
+
+  const deleteWebhookMutation = useMutation({
+    mutationFn: (shouldDropPendingUpdates: boolean) =>
+      api
+        .delete<OperationResponse>('/bot/webhook', {
+          params: { drop_pending_updates: shouldDropPendingUpdates },
+        })
+        .then((response) => response.data.message ?? 'Webhook o‘chirildi'),
+    onSuccess: (message) => {
+      toast.success(message)
+      queryClient.invalidateQueries({ queryKey: ['bot-webhook-info'] })
+    },
+    onError: () => toast.error("Webhookni o'chirib bo'lmadi"),
+  })
+
   function openCreateSetting() {
     setEditingSetting(null)
     setSettingForm(INITIAL_SETTING_FORM)
@@ -158,7 +243,11 @@ export function AiSettingsPage() {
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: 'prompt', label: 'Prompt' },
     { key: 'settings', label: 'Sozlamalar' },
+    { key: 'webhook', label: 'Webhook' },
   ]
+
+  const webhookInfo: BotWebhookInfo | undefined = webhookInfoQuery.data
+  const isWebhookActionPending = setWebhookMutation.isPending || deleteWebhookMutation.isPending
 
   return (
     <div className="p-4 sm:p-6 max-w-content mx-auto space-y-4 sm:space-y-6">
@@ -300,6 +389,174 @@ export function AiSettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'webhook' && (
+        <div className="space-y-4">
+          <div className="kas-card p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Bot size={18} />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-text-primary">Telegram Webhook</h3>
+                      <span
+                        className={`kas-badge ${
+                          webhookInfo?.isRegistered
+                            ? 'bg-success/10 text-success'
+                            : 'bg-danger/10 text-danger'
+                        }`}
+                      >
+                        {webhookInfo?.isRegistered ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-text-secondary">
+                      Telegram webhook holatini ko‘rish va bot endpointni qayta ulash.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-border bg-surface-2 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                    Receiver endpoint
+                  </p>
+                  <p className="mt-2 font-mono text-xs text-text-primary sm:text-sm">
+                    POST /api/v1/bot/webhook
+                  </p>
+                  <p className="mt-2 text-xs text-text-secondary">
+                    Bu endpoint Telegram update&apos;larini qabul qiladi. Uni qo‘lda chaqirish shart emas,
+                    `Set webhook` amali Telegram tomonda registratsiyani bajaradi.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[250px]">
+                <button
+                  className="kas-btn-secondary gap-2"
+                  onClick={() => void webhookInfoQuery.refetch()}
+                  disabled={webhookInfoQuery.isFetching || isWebhookActionPending}
+                >
+                  <RefreshCw size={14} className={webhookInfoQuery.isFetching ? 'animate-spin' : ''} />
+                  Holatni yangilash
+                </button>
+                <button
+                  className="kas-btn-primary gap-2"
+                  onClick={() => setWebhookMutation.mutate()}
+                  disabled={isWebhookActionPending}
+                >
+                  <CheckCircle2 size={14} />
+                  Set webhook
+                </button>
+                <button
+                  className="kas-btn-danger gap-2"
+                  onClick={() => deleteWebhookMutation.mutate(dropPendingUpdates)}
+                  disabled={isWebhookActionPending}
+                >
+                  <Unplug size={14} />
+                  Delete webhook
+                </button>
+                <label className="flex items-start gap-3 rounded-md border border-border bg-surface-2 px-3 py-3 text-sm text-text-primary">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={dropPendingUpdates}
+                    onChange={(event) => setDropPendingUpdates(event.target.checked)}
+                    disabled={deleteWebhookMutation.isPending}
+                  />
+                  <span className="text-xs text-text-secondary">
+                    Delete paytida `drop_pending_updates=true` yuborish
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {webhookInfoQuery.isError && (
+            <div className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
+              Webhook ma&apos;lumotini olib bo‘lmadi. Endpoint va tokenlarni tekshirib qayta urinib ko‘ring.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <WebhookInfoRow
+              label="Configured URL"
+              value={webhookInfo?.configuredUrl ?? 'TELEGRAM_WEBHOOK_URL hali sozlanmagan'}
+              mono
+            />
+            <WebhookInfoRow
+              label="Telegram URL"
+              value={webhookInfo?.telegramUrl ?? "Telegram tomonda webhook ro'yxatdan o'tmagan"}
+              mono
+            />
+            <WebhookInfoRow
+              label="Pending updates"
+              value={webhookInfo?.pendingUpdateCount ?? 0}
+            />
+            <WebhookInfoRow
+              label="Max connections"
+              value={webhookInfo?.maxConnections ?? '-'}
+            />
+            <WebhookInfoRow label="IP address" value={webhookInfo?.ipAddress ?? '-'} mono />
+            <WebhookInfoRow
+              label="Custom certificate"
+              value={
+                webhookInfo?.hasCustomCertificate == null
+                  ? '-'
+                  : webhookInfo.hasCustomCertificate
+                    ? 'Ha'
+                    : "Yo'q"
+              }
+            />
+            <WebhookInfoRow
+              label="Allowed updates"
+              value={
+                webhookInfo?.allowedUpdates.length
+                  ? webhookInfo.allowedUpdates.join(', ')
+                  : 'Telegram default'
+              }
+            />
+            <WebhookInfoRow
+              label="Last sync error"
+              value={formatWebhookDate(webhookInfo?.lastSyncErrorAt)}
+            />
+          </div>
+
+          <div
+            className={`rounded-xl border p-4 ${
+              webhookInfo?.lastErrorMessage
+                ? 'border-warning/30 bg-warning/10'
+                : 'border-success/30 bg-success/10'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${
+                  webhookInfo?.lastErrorMessage
+                    ? 'bg-warning/15 text-warning'
+                    : 'bg-success/15 text-success'
+                }`}
+              >
+                {webhookInfo?.lastErrorMessage ? <ShieldAlert size={16} /> : <CheckCircle2 size={16} />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary">
+                  {webhookInfo?.lastErrorMessage ? 'Oxirgi Telegram xatosi' : 'Webhook sog‘lom ishlayapti'}
+                </p>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {webhookInfo?.lastErrorMessage ?? 'Telegram tomonidan xato qayd etilmagan.'}
+                </p>
+                {webhookInfo?.lastErrorAt && (
+                  <p className="mt-2 text-xs text-text-muted">
+                    Vaqti: {formatDateTime(webhookInfo.lastErrorAt)}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

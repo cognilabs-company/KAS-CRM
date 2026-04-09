@@ -4,6 +4,7 @@ import { MapPin, Phone, Plus, Send, Trash2, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
+import { getApiErrorMessage } from '@shared/api/errors'
 import {
   mapStoreListItem,
   mapStoreResponse,
@@ -68,9 +69,11 @@ export function StoresPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState(routeSearch)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Store | null>(null)
   const [form, setForm] = useState<StoreFormState>(INITIAL_STORE_FORM)
+  const [editForm, setEditForm] = useState<StoreFormState>(INITIAL_STORE_FORM)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -97,6 +100,29 @@ export function StoresPage() {
         .then((response) => mapStoreResponse(response.data)),
     enabled: Boolean(selectedStoreId),
   })
+
+  useEffect(() => {
+    if (!selectedStore) return
+    setEditForm({
+      name: selectedStore.name,
+      responsiblePerson: selectedStore.contactPerson,
+      phone: selectedStore.phone,
+      phoneSecondary: selectedStore.phoneSecondary ?? '',
+      address: selectedStore.address,
+      district: selectedStore.district,
+      latitude: String(selectedStore.location.lat),
+      longitude: String(selectedStore.location.lng),
+      workingHours: selectedStore.workingHours?.raw ?? '',
+      telegramId: selectedStore.telegramId ? String(selectedStore.telegramId) : '',
+      telegramGroupId: selectedStore.telegramGroupId ? String(selectedStore.telegramGroupId) : '',
+      isActive: selectedStore.isActive,
+      productTypes: {
+        fiting: Boolean(selectedStore.productTypes?.fiting),
+        truba: Boolean(selectedStore.productTypes?.truba),
+        other: Boolean(selectedStore.productTypes?.other),
+      },
+    })
+  }, [selectedStore])
 
   const createMutation = useMutation({
     mutationFn: (payload: StoreFormState) =>
@@ -135,6 +161,32 @@ export function StoresPage() {
     onError: () => toast.error("Magazinni o'chirib bo'lmadi"),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: StoreFormState) =>
+      api.patch(`/admin/stores/${selectedStoreId}`, {
+        name: payload.name.trim(),
+        responsible_person: payload.responsiblePerson.trim(),
+        phone: payload.phone.trim(),
+        phone_secondary: payload.phoneSecondary.trim() || undefined,
+        address: payload.address.trim(),
+        district: payload.district.trim(),
+        latitude: Number(payload.latitude),
+        longitude: Number(payload.longitude),
+        working_hours: payload.workingHours.trim() || undefined,
+        telegram_id: payload.telegramId.trim() ? Number(payload.telegramId) : undefined,
+        telegram_group_id: payload.telegramGroupId.trim() ? Number(payload.telegramGroupId) : undefined,
+        is_active: payload.isActive,
+        product_types: payload.productTypes,
+      }),
+    onSuccess: () => {
+      toast.success('Magazin yangilandi')
+      setIsEditOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['stores'] })
+      queryClient.invalidateQueries({ queryKey: ['store', selectedStoreId] })
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Magazinni yangilab bo'lmadi")),
+  })
+
   function updateForm<K extends keyof StoreFormState>(key: K, value: StoreFormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
@@ -165,6 +217,11 @@ export function StoresPage() {
   function handleCreateStore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     createMutation.mutate(form)
+  }
+
+  function handleUpdateStore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    updateMutation.mutate(editForm)
   }
 
   const columns: Column<Store>[] = [
@@ -301,6 +358,12 @@ export function StoresPage() {
                     <DrawerRow label="Qo'shimcha telefon" value={formatPhone(selectedStore.phoneSecondary)} mono />
                   )}
                   <DrawerRow label="Leadlar soni" value={String(selectedStore.leadsCount)} mono />
+                </div>
+
+                <div className="mt-4">
+                  <button className="kas-btn-secondary w-full" onClick={() => setIsEditOpen(true)}>
+                    Tahrirlash
+                  </button>
                 </div>
               </div>
 
@@ -565,6 +628,217 @@ export function StoresPage() {
         <p className="text-sm text-text-secondary">
           Backend bu amalni soft delete sifatida bajaradi va magazin `inactive` holatga o&apos;tadi.
         </p>
+      </ModalDialog>
+
+      <ModalDialog
+        open={isEditOpen}
+        title="Magazinni tahrirlash"
+        description="Store detail va update endpointlariga ulangan."
+        onClose={() => !updateMutation.isPending && setIsEditOpen(false)}
+        className="max-w-4xl"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="kas-btn-secondary"
+              onClick={() => setIsEditOpen(false)}
+              disabled={updateMutation.isPending}
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              form="edit-store-form"
+              className="kas-btn-primary"
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
+        }
+      >
+        <form id="edit-store-form" onSubmit={handleUpdateStore} className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Magazin nomi" required>
+              <input
+                className="kas-input"
+                value={editForm.name}
+                onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="KAS Chilonzor"
+                required
+              />
+            </FormField>
+
+            <FormField label="Mas'ul shaxs" required>
+              <input
+                className="kas-input"
+                value={editForm.responsiblePerson}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, responsiblePerson: event.target.value }))
+                }
+                placeholder="Bekzod Karimov"
+                required
+              />
+            </FormField>
+
+            <FormField label="Telefon" required>
+              <input
+                className="kas-input"
+                value={editForm.phone}
+                onChange={(event) => setEditForm((current) => ({ ...current, phone: event.target.value }))}
+                placeholder="+998712345678"
+                required
+              />
+            </FormField>
+
+            <FormField label="Qo'shimcha telefon">
+              <input
+                className="kas-input"
+                value={editForm.phoneSecondary}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, phoneSecondary: event.target.value }))
+                }
+                placeholder="+998901112233"
+              />
+            </FormField>
+
+            <FormField label="Tuman" required>
+              <input
+                className="kas-input"
+                value={editForm.district}
+                onChange={(event) => setEditForm((current) => ({ ...current, district: event.target.value }))}
+                placeholder="Chilonzor"
+                required
+              />
+            </FormField>
+
+            <FormField label="Ish vaqti">
+              <input
+                className="kas-input"
+                value={editForm.workingHours}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, workingHours: event.target.value }))
+                }
+                placeholder="09:00-18:00"
+              />
+            </FormField>
+
+            <FormField label="Telegram ID">
+              <input
+                className="kas-input"
+                value={editForm.telegramId}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, telegramId: event.target.value }))
+                }
+                placeholder="9988776655"
+              />
+            </FormField>
+
+            <FormField label="Telegram Group ID">
+              <input
+                className="kas-input"
+                value={editForm.telegramGroupId}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, telegramGroupId: event.target.value }))
+                }
+                placeholder="-1001234567890"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Manzil" required>
+            <textarea
+              className="kas-input min-h-24 resize-none"
+              value={editForm.address}
+              onChange={(event) => setEditForm((current) => ({ ...current, address: event.target.value }))}
+              placeholder="Chilonzor tumani, Bunyodkor ko'chasi 12"
+              required
+            />
+          </FormField>
+
+          <div className="kas-card p-4">
+            <YandexMapPicker
+              latitude={Number(editForm.latitude)}
+              longitude={Number(editForm.longitude)}
+              onSelect={(coords) =>
+                setEditForm((current) => ({
+                  ...current,
+                  latitude: String(coords.latitude),
+                  longitude: String(coords.longitude),
+                }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Latitude" required>
+              <input
+                type="number"
+                step="0.000001"
+                className="kas-input"
+                value={editForm.latitude}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, latitude: event.target.value }))
+                }
+                required
+              />
+            </FormField>
+
+            <FormField label="Longitude" required>
+              <input
+                type="number"
+                step="0.000001"
+                className="kas-input"
+                value={editForm.longitude}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, longitude: event.target.value }))
+                }
+                required
+              />
+            </FormField>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Mahsulot turlari">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {PRODUCT_TYPE_OPTIONS.map((option) => (
+                  <label
+                    key={option.key}
+                    className="flex items-center gap-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editForm.productTypes[option.key]}
+                      onChange={(event) =>
+                        setEditForm((current) => ({
+                          ...current,
+                          productTypes: {
+                            ...current.productTypes,
+                            [option.key]: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </FormField>
+
+            <FormField label="Holat">
+              <label className="flex items-center gap-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={editForm.isActive}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, isActive: event.target.checked }))
+                  }
+                />
+                Faol magazin
+              </label>
+            </FormField>
+          </div>
+        </form>
       </ModalDialog>
     </div>
   )

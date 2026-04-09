@@ -1,25 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { Bot, Download, ExternalLink, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Bot, Download, ExternalLink, Pencil, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
+import { getApiErrorMessage } from '@shared/api/errors'
 import {
+  mapStoreListItem,
   normalizePaginated,
   mapLeadListItem,
   mapLeadResponse,
+  type BackendNearestStoreResponse,
   type BackendLeadListItem,
   type BackendLeadResponse,
   type BackendPaginated,
+  type BackendStoreListItem,
 } from '@shared/api/backend'
-import type { Lead } from '@shared/types/api'
+import type { Lead, Store } from '@shared/types/api'
 import { formatPhone, formatRelative, truncate } from '@shared/lib/utils'
 import { SearchInput } from '@shared/ui/Controls'
 import { DataTable, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 
+interface LeadEditFormState {
+  phone: string
+  storeId: string
+  aiSummary: string
+}
+
 export function LeadsPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeSearch = searchParams.get('search') ?? ''
   const selectedLeadId = searchParams.get('leadId')
@@ -27,6 +38,12 @@ export function LeadsPage() {
   const [search, setSearch] = useState(routeSearch)
   const [selected, setSelected] = useState<Lead | null>(null)
   const [isExportOpen, setIsExportOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState<LeadEditFormState>({
+    phone: '',
+    storeId: '',
+    aiSummary: '',
+  })
 
   useEffect(() => {
     setSearch(routeSearch)
@@ -66,6 +83,42 @@ export function LeadsPage() {
     }
   }, [selectedLead])
 
+  useEffect(() => {
+    if (!selected) return
+    setEditForm({
+      phone: selected.phone ?? '',
+      storeId: selected.nearestStore?.id ?? '',
+      aiSummary: selected.aiSummary,
+    })
+  }, [selected])
+
+  const storesQuery = useQuery({
+    queryKey: ['stores-options'],
+    queryFn: () =>
+      api
+        .get<BackendPaginated<BackendStoreListItem>>('/admin/stores/', {
+          params: { page: 1, size: 100 },
+        })
+        .then((response) => normalizePaginated(response.data, mapStoreListItem)),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  const nearestStoresQuery = useQuery({
+    queryKey: ['nearest-stores', selected?.id, selected?.location?.lat, selected?.location?.lng],
+    queryFn: () =>
+      api
+        .get<BackendNearestStoreResponse[]>('/admin/stores/nearest', {
+          params: {
+            lat: selected?.location?.lat,
+            lon: selected?.location?.lng,
+            limit: 3,
+          },
+        })
+        .then((response) => response.data.map(mapStoreListItem)),
+    enabled: Boolean(selected?.location),
+    staleTime: 5 * 60 * 1000,
+  })
+
   const exportMutation = useMutation({
     mutationFn: async () => {
       const response = await api.get<Blob>('/admin/leads/export', {
@@ -99,6 +152,25 @@ export function LeadsPage() {
       setIsExportOpen(false)
     },
     onError: () => toast.error('Excel eksportida xatolik yuz berdi'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      api
+        .patch<BackendLeadResponse>(`/admin/leads/${selected?.id}`, {
+          store_id: editForm.storeId || undefined,
+          phone: editForm.phone.trim() || undefined,
+          ai_summary: editForm.aiSummary.trim(),
+        })
+        .then((response) => mapLeadResponse(response.data)),
+    onSuccess: (lead) => {
+      toast.success('Lead yangilandi')
+      setSelected(lead)
+      setIsEditOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['lead', lead.id] })
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Leadni yangilab bo‘lmadi')),
   })
 
   function openLead(row: Lead) {
@@ -312,17 +384,51 @@ export function LeadsPage() {
                 <Row label="Manba" value={selected.source} />
               </div>
 
-              <button
-                disabled={!selected.userId}
-                onClick={() => {
-                  if (!selected.userId) return
-                  navigate(`/chats?userId=${selected.userId}`)
-                }}
-                className="kas-btn-secondary w-full justify-center"
-              >
-                <ExternalLink size={14} />
-                Chat tarixini ko&apos;rish
-              </button>
+              {selected.location && nearestStoresQuery.data && nearestStoresQuery.data.length > 0 && (
+                <div className="kas-card p-4">
+                  <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
+                    Yaqin magazinlar
+                  </h3>
+                  <div className="space-y-2">
+                    {nearestStoresQuery.data.map((store) => (
+                      <button
+                        key={store.id}
+                        type="button"
+                        className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left transition-colors hover:border-primary/30"
+                        onClick={() => {
+                          setEditForm((current) => ({ ...current, storeId: store.id }))
+                          setIsEditOpen(true)
+                        }}
+                      >
+                        <p className="text-sm font-medium text-text-primary">{store.name}</p>
+                        <p className="mt-1 text-xs text-text-secondary">{store.address}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditOpen(true)}
+                  className="kas-btn-primary w-full justify-center"
+                >
+                  <Pencil size={14} />
+                  Leadni tahrirlash
+                </button>
+                <button
+                  disabled={!selected.userId}
+                  onClick={() => {
+                    if (!selected.userId) return
+                    navigate(`/chats?userId=${selected.userId}`)
+                  }}
+                  className="kas-btn-secondary w-full justify-center"
+                >
+                  <ExternalLink size={14} />
+                  Chat tarixini ko&apos;rish
+                </button>
+              </div>
             </div>
           </aside>
         </>
@@ -364,6 +470,98 @@ export function LeadsPage() {
                 : `Barcha leadlar: ${data?.total ?? 0} ta`}
             </p>
           </div>
+        </div>
+      </ModalDialog>
+
+      <ModalDialog
+        open={isEditOpen}
+        title="Leadni tahrirlash"
+        description="Lead update va nearest store endpointlariga ulangan."
+        onClose={() => !updateMutation.isPending && setIsEditOpen(false)}
+        className="max-w-2xl"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="kas-btn-secondary"
+              onClick={() => setIsEditOpen(false)}
+              disabled={updateMutation.isPending}
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              className="kas-btn-primary"
+              onClick={() => updateMutation.mutate()}
+              disabled={updateMutation.isPending || !selected}
+            >
+              {updateMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Telefon</span>
+            <input
+              className="kas-input"
+              value={editForm.phone}
+              onChange={(event) =>
+                setEditForm((current) => ({ ...current, phone: event.target.value }))
+              }
+              placeholder="+998901112233"
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Magazin</span>
+            <select
+              className="kas-input"
+              value={editForm.storeId}
+              onChange={(event) =>
+                setEditForm((current) => ({ ...current, storeId: event.target.value }))
+              }
+            >
+              <option value="">Magazin tanlanmagan</option>
+              {(storesQuery.data?.data ?? []).map((store: Store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name} - {store.district}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {nearestStoresQuery.data && nearestStoresQuery.data.length > 0 && (
+            <div className="rounded-xl border border-border bg-surface-2 p-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                Tavsiya etilgan yaqin magazinlar
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {nearestStoresQuery.data.map((store) => (
+                  <button
+                    key={store.id}
+                    type="button"
+                    className="kas-badge border border-primary/20 bg-primary/10 text-primary"
+                    onClick={() => setEditForm((current) => ({ ...current, storeId: store.id }))}
+                  >
+                    {store.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">AI summary</span>
+            <textarea
+              className="kas-input min-h-32 resize-none"
+              value={editForm.aiSummary}
+              onChange={(event) =>
+                setEditForm((current) => ({ ...current, aiSummary: event.target.value }))
+              }
+              placeholder="Lead manually reassigned..."
+            />
+          </label>
         </div>
       </ModalDialog>
     </div>

@@ -3,6 +3,7 @@ import type {
   AdminPage,
   AiLog,
   AiLogStats,
+  BotWebhookInfo,
   AuthUser,
   BotUser,
   ChartDataPoint,
@@ -102,6 +103,8 @@ export interface BackendTelegramUserListItem {
   created_at?: string
   updated_at?: string
 }
+
+export interface BackendTelegramUserResponse extends BackendTelegramUserListItem {}
 
 export interface BackendStoreListItem {
   id: string
@@ -261,12 +264,22 @@ export interface BackendAiLogResponse extends BackendAiLogListItem {
   error_message?: string | null
 }
 
+export interface BackendMessageResponse {
+  message: string
+}
+
+export interface BackendNearestStoreResponse extends BackendStoreListItem {
+  distance_km: number
+}
+
 export interface BackendAiLogStatsResponse {
   total_queries: number
   success_rate: number
   avg_response_time_ms: number
   total_tokens: number
 }
+
+export type BackendWebhookInfoResponse = Record<string, unknown>
 
 export function clearStoredAuth() {
   localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY)
@@ -302,6 +315,52 @@ function splitWorkingHours(raw?: string | null) {
   if (!raw) return undefined
   const [from = '', to = ''] = raw.split('-')
   return { from, to, raw }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function pickString(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return undefined
+}
+
+function pickNumber(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return undefined
+}
+
+function pickBoolean(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'boolean') return value
+  }
+  return undefined
+}
+
+function pickStringArray(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key]
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string')
+    }
+  }
+  return []
+}
+
+function toWebhookDate(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return new Date(value * 1000).toISOString()
+  }
+  return undefined
 }
 
 export function mapAdminUser(response: BackendAdminUserResponse): AuthUser {
@@ -586,5 +645,54 @@ export function mapAiSetting(item: BackendAiSettingResponse): AISettingItem {
     isActive: item.is_active,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
+  }
+}
+
+export function mapBotWebhookInfo(payload: BackendWebhookInfoResponse): BotWebhookInfo {
+  const root = isRecord(payload) ? payload : {}
+  const telegramPayload = isRecord(root.telegram)
+    ? root.telegram
+    : isRecord(root.telegram_info)
+      ? root.telegram_info
+      : isRecord(root.result)
+        ? root.result
+        : root
+
+  const configuredUrl =
+    pickString(root, ['configured_webhook_url', 'configured_url', 'app_webhook_url']) ??
+    pickString(telegramPayload, ['configured_webhook_url', 'configured_url', 'app_webhook_url'])
+
+  const telegramUrl =
+    pickString(telegramPayload, ['url', 'telegram_webhook_url', 'telegram_url', 'webhook_url']) ??
+    pickString(root, ['telegram_webhook_url', 'telegram_url'])
+  const telegramAllowedUpdates = pickStringArray(telegramPayload, ['allowed_updates'])
+
+  return {
+    configuredUrl,
+    telegramUrl,
+    isRegistered: Boolean(telegramUrl),
+    pendingUpdateCount:
+      pickNumber(telegramPayload, ['pending_update_count', 'pending_updates']) ??
+      pickNumber(root, ['pending_update_count', 'pending_updates']),
+    lastErrorMessage:
+      pickString(telegramPayload, ['last_error_message']) ??
+      pickString(root, ['last_error_message']),
+    lastErrorAt:
+      toWebhookDate(telegramPayload.last_error_date) ?? toWebhookDate(root.last_error_date),
+    lastSyncErrorAt:
+      toWebhookDate(telegramPayload.last_synchronization_error_date) ??
+      toWebhookDate(root.last_synchronization_error_date),
+    maxConnections:
+      pickNumber(telegramPayload, ['max_connections']) ??
+      pickNumber(root, ['max_connections']),
+    ipAddress:
+      pickString(telegramPayload, ['ip_address']) ?? pickString(root, ['ip_address']),
+    allowedUpdates:
+      telegramAllowedUpdates.length > 0
+        ? telegramAllowedUpdates
+        : pickStringArray(root, ['allowed_updates']),
+    hasCustomCertificate:
+      pickBoolean(telegramPayload, ['has_custom_certificate']) ??
+      pickBoolean(root, ['has_custom_certificate']),
   }
 }

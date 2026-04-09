@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
@@ -14,7 +14,9 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
+import { getApiErrorMessage } from '@shared/api/errors'
 import {
   mapChatListItem,
   mapDashboardStats,
@@ -22,6 +24,7 @@ import {
   mapProductListItem,
   mapStoreListItem,
   normalizePaginated,
+  type BackendAdminUserResponse,
   type BackendChatListItem,
   type BackendDashboardStatsResponse,
   type BackendLeadListItem,
@@ -32,6 +35,7 @@ import {
 import { useAuthStore, useUIStore } from '@shared/lib/store'
 import { useIsMobile } from '@shared/lib/useIsMobile'
 import { formatRelative, getInitials, truncate } from '@shared/lib/utils'
+import { ModalDialog } from '@shared/ui/ModalDialog'
 import type { ChatUser, Lead, Product, Store } from '@shared/types/api'
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -50,6 +54,20 @@ type SearchResult =
   | { id: string; kind: 'lead'; title: string; subtitle: string; meta: string; href: string }
   | { id: string; kind: 'product'; title: string; subtitle: string; meta: string; href: string }
   | { id: string; kind: 'store'; title: string; subtitle: string; meta: string; href: string }
+
+interface CreateAdminFormState {
+  email: string
+  password: string
+  fullName: string
+  role: 'admin' | 'superadmin'
+}
+
+const INITIAL_CREATE_ADMIN_FORM: CreateAdminFormState = {
+  email: '',
+  password: '',
+  fullName: '',
+  role: 'admin',
+}
 
 function useOutsideClick(
   ref: RefObject<HTMLElement>,
@@ -84,6 +102,8 @@ export function Header() {
   const [search, setSearch] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isCreateAdminOpen, setIsCreateAdminOpen] = useState(false)
+  const [createAdminForm, setCreateAdminForm] = useState<CreateAdminFormState>(INITIAL_CREATE_ADMIN_FORM)
   const searchRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
   const deferredSearch = useDeferredValue(search.trim())
@@ -223,6 +243,22 @@ export function Header() {
   const notificationCount = leadNotifications.length + chatNotifications.length
   const dashboardStats = dashboardQuery.data ? mapDashboardStats(dashboardQuery.data) : null
 
+  const createAdminMutation = useMutation({
+    mutationFn: (payload: CreateAdminFormState) =>
+      api.post<BackendAdminUserResponse>('/admin/auth/create-admin', {
+        email: payload.email.trim(),
+        password: payload.password,
+        full_name: payload.fullName.trim(),
+        role: payload.role,
+      }),
+    onSuccess: () => {
+      toast.success("Yangi admin yaratildi")
+      setIsCreateAdminOpen(false)
+      setCreateAdminForm(INITIAL_CREATE_ADMIN_FORM)
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Admin yaratib bo'lmadi")),
+  })
+
   function handleSearchResultClick(result: SearchResult) {
     setSearch('')
     setIsSearchOpen(false)
@@ -239,6 +275,10 @@ export function Header() {
     markNotificationSeen(`lead:${leadId}`)
     setIsNotificationsOpen(false)
     navigate(`/leads?leadId=${leadId}`)
+  }
+
+  function handleCreateAdmin() {
+    createAdminMutation.mutate(createAdminForm)
   }
 
   return (
@@ -432,6 +472,15 @@ export function Header() {
 
           {user && (
             <div className="flex items-center gap-2 pl-2 border-l border-border">
+              {user.role === 'superadmin' && (
+                <button
+                  type="button"
+                  className="hidden rounded-md border border-border px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-2 lg:inline-flex"
+                  onClick={() => setIsCreateAdminOpen(true)}
+                >
+                  Admin qo'shish
+                </button>
+              )}
               <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
                 <span className="text-xs font-bold text-primary">
                   {getInitials(user.name)}
@@ -447,6 +496,96 @@ export function Header() {
           )}
         </div>
       </div>
+
+      <ModalDialog
+        open={isCreateAdminOpen}
+        title="Yangi admin yaratish"
+        description="Bu forma `/admin/auth/create-admin` endpointiga ulanadi."
+        onClose={() => !createAdminMutation.isPending && setIsCreateAdminOpen(false)}
+        className="max-w-xl"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="kas-btn-secondary"
+              onClick={() => setIsCreateAdminOpen(false)}
+              disabled={createAdminMutation.isPending}
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              className="kas-btn-primary"
+              onClick={handleCreateAdmin}
+              disabled={
+                createAdminMutation.isPending ||
+                !createAdminForm.email.trim() ||
+                !createAdminForm.password.trim() ||
+                !createAdminForm.fullName.trim()
+              }
+            >
+              {createAdminMutation.isPending ? 'Yaratilmoqda...' : 'Admin yaratish'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Full name</span>
+            <input
+              className="kas-input"
+              value={createAdminForm.fullName}
+              onChange={(event) =>
+                setCreateAdminForm((current) => ({ ...current, fullName: event.target.value }))
+              }
+              placeholder="New KAS Admin"
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Email</span>
+            <input
+              className="kas-input"
+              type="email"
+              value={createAdminForm.email}
+              onChange={(event) =>
+                setCreateAdminForm((current) => ({ ...current, email: event.target.value }))
+              }
+              placeholder="new-admin@kas.uz"
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Password</span>
+            <input
+              className="kas-input"
+              type="password"
+              value={createAdminForm.password}
+              onChange={(event) =>
+                setCreateAdminForm((current) => ({ ...current, password: event.target.value }))
+              }
+              placeholder="SecurePassword123"
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Role</span>
+            <select
+              className="kas-input"
+              value={createAdminForm.role}
+              onChange={(event) =>
+                setCreateAdminForm((current) => ({
+                  ...current,
+                  role: event.target.value as CreateAdminFormState['role'],
+                }))
+              }
+            >
+              <option value="admin">Admin</option>
+              <option value="superadmin">Superadmin</option>
+            </select>
+          </label>
+        </div>
+      </ModalDialog>
     </header>
   )
 }

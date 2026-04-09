@@ -297,3 +297,17 @@ export interface AISettingItem {
   createdAt: string
   updatedAt: string
 }
+
+export interface BotWebhookInfo {
+  configuredUrl?: string
+  telegramUrl?: string
+  isRegistered: boolean
+  pendingUpdateCount?: number
+  lastErrorMessage?: string
+  lastErrorAt?: string
+  lastSyncErrorAt?: string
+  maxConnections?: number
+  ipAddress?: string
+  allowedUpdates: string[]
+  hasCustomCertificate?: boolean
+}
