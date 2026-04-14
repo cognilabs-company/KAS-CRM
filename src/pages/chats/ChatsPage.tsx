@@ -92,17 +92,67 @@ function formatAudioDuration(seconds: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
+function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBot?: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
+  const hasStartedLoadingRef = useRef(false)
+  const openAfterLoadRef = useRef(false)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [objectUrl])
+
+  async function loadImage(openAfterLoad = false) {
+    if (objectUrl) {
+      if (openAfterLoad) setIsOpen(true)
+      return
+    }
+
+    openAfterLoadRef.current = openAfterLoadRef.current || openAfterLoad
+    if (hasStartedLoadingRef.current) return
+
+    hasStartedLoadingRef.current = true
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const nextObjectUrl = await fetchMediaObjectUrl(item.url)
+
+      if (!isMountedRef.current) {
+        URL.revokeObjectURL(nextObjectUrl)
+        return
+      }
+
+      setObjectUrl(nextObjectUrl)
+
+      if (openAfterLoadRef.current) {
+        openAfterLoadRef.current = false
+        setIsOpen(true)
+      }
+    } catch {
+      hasStartedLoadingRef.current = false
+      if (isMountedRef.current) setError("Rasmni yuklab bo'lmadi")
+    } finally {
+      if (isMountedRef.current) setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadImage()
+  }, [item.url])
 
   useEffect(() => {
     if (!isOpen) return
@@ -122,39 +172,33 @@ function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
   }, [isOpen])
 
   async function handleOpen() {
-    if (isLoading) return
-
-    if (!objectUrl) {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const nextObjectUrl = await fetchMediaObjectUrl(item.url)
-        setObjectUrl(nextObjectUrl)
-        setIsOpen(true)
-      } catch {
-        setError("Rasmni yuklab bo'lmadi")
-      } finally {
-        setIsLoading(false)
-      }
-      return
-    }
-
-    setIsOpen(true)
+    await loadImage(true)
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="max-w-full space-y-1.5">
       <button
         type="button"
         onClick={handleOpen}
-        className="relative flex h-36 w-56 max-w-full items-center justify-center overflow-hidden rounded-md border border-border/60 bg-background/40 text-left transition-colors hover:border-primary/70"
+        className={cn(
+          'group relative flex h-44 w-60 max-w-full items-center justify-center overflow-hidden rounded-sm bg-background/40 text-left transition-transform active:scale-[0.99]',
+          isBot ? 'ring-1 ring-white/10' : 'ring-1 ring-border/60'
+        )}
+        aria-label="Rasmni ochish"
       >
         {objectUrl ? (
-          <img src={objectUrl} alt={item.filename ?? 'Chat rasmi'} className="h-full w-full object-cover" />
-        ) : (
+          <>
+            <img src={objectUrl} alt={item.filename ?? 'Chat rasmi'} className="h-full w-full object-cover" />
+            <span className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+          </>
+        ) : error ? (
           <div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-text-secondary">
-            {isLoading ? <Loader2 size={22} className="animate-spin text-primary" /> : <ImageIcon size={22} />}
-            <span>{isLoading ? 'Rasm yuklanmoqda...' : 'Rasmni ochish'}</span>
+            <ImageIcon size={22} />
+            <span>Qayta yuklash</span>
+          </div>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-surface/40">
+            {isLoading ? <Loader2 size={24} className="animate-spin text-primary" /> : <ImageIcon size={22} />}
           </div>
         )}
       </button>
@@ -162,11 +206,16 @@ function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
       {error && <p className="text-xs text-danger">{error}</p>}
 
       {isOpen && objectUrl ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-3 sm:p-5"
+          onClick={() => setIsOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
           <button
             type="button"
             onClick={() => setIsOpen(false)}
-            className="absolute right-4 top-4 rounded-md bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            className="absolute right-4 top-4 rounded-sm bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
             aria-label="Rasmni yopish"
           >
             <X size={20} />
@@ -174,7 +223,8 @@ function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
           <img
             src={objectUrl}
             alt={item.filename ?? 'Chat rasmi'}
-            className="max-h-full max-w-full rounded-md object-contain"
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-full max-w-full rounded-sm object-contain shadow-2xl"
           />
         </div>
       ) : null}
@@ -354,7 +404,7 @@ function MessageMedia({ items, isBot = false }: { items: ChatMediaItem[]; isBot?
     <div className="mt-2 space-y-2">
       {items.map((item, index) => {
         if (item.kind === 'image') {
-          return <AuthenticatedImage key={`${item.url}-${index}`} item={item} />
+          return <AuthenticatedImage key={`${item.url}-${index}`} item={item} isBot={isBot} />
         }
 
         if (item.kind === 'audio') {
