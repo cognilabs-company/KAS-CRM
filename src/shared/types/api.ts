@@ -117,6 +117,17 @@ export type SystemEventType =
   | 'lead_created'
   | 'store_assigned'
   | 'notification_sent'
+  | 'voice_deferred'
+  | 'photo_shared'
+
+export type ChatMediaKind = 'image' | 'audio'
+
+export interface ChatMediaItem {
+  url: string
+  kind: ChatMediaKind
+  filename?: string
+  extension?: string
+}
 
 export interface ChatMessage {
   id: string
@@ -124,6 +135,8 @@ export interface ChatMessage {
   content: string
   transcript?: string
   systemEvent?: SystemEventType
+  mediaItems: ChatMediaItem[]
+  hasMedia: boolean
   timestamp: string
 }
 

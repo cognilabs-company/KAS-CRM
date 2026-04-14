@@ -5,6 +5,7 @@ import {
   ACCESS_TOKEN_STORAGE_KEY,
   REFRESH_TOKEN_STORAGE_KEY,
   clearStoredAuth,
+  normalizeAdminAvailablePages,
 } from '@shared/api/backend'
 
 interface UIState {
@@ -85,14 +86,15 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       availablePages: [],
       setAuth: (user, session) => {
+        const availablePages = normalizeAdminAvailablePages(user.role, user.availablePages)
         localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, session.accessToken)
         localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, session.refreshToken)
         set({
-          user,
+          user: { ...user, availablePages },
           accessToken: session.accessToken,
           refreshToken: session.refreshToken,
           isAuthenticated: true,
-          availablePages: user.availablePages,
+          availablePages,
         })
       },
       updateAccessToken: (token) => {
@@ -134,6 +136,12 @@ export const useAuthStore = create<AuthState>()(
             : persisted.user?.availablePages?.length
               ? persisted.user.availablePages
               : currentState.availablePages
+        const normalizedAvailablePages = persisted.user?.role
+          ? normalizeAdminAvailablePages(persisted.user.role, availablePages)
+          : availablePages
+        const user = persisted.user
+          ? { ...persisted.user, availablePages: normalizedAvailablePages }
+          : null
 
         if (accessToken) {
           localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken)
@@ -145,8 +153,9 @@ export const useAuthStore = create<AuthState>()(
         return {
           ...currentState,
           ...persisted,
+          user,
           accessToken,
-          availablePages,
+          availablePages: normalizedAvailablePages,
         }
       },
     }

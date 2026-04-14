@@ -17,9 +17,9 @@ import {
   type BackendTelegramUserListItem,
   type BackendTelegramUserResponse,
 } from '@shared/api/backend'
-import { formatPhone, formatRelative, truncate } from '@shared/lib/utils'
+import { cn, formatPhone, formatRelative, truncate } from '@shared/lib/utils'
 import { ConfirmDialog, SearchInput } from '@shared/ui/Controls'
-import { DataTable, type Column } from '@shared/ui/DataTable'
+import { DataTable, getVisiblePages, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 import { StatusBadge } from '@shared/ui/StatusBadge'
 import type { BotUser, ChatUser, UserStatus } from '@shared/types/api'
@@ -559,6 +559,7 @@ function PaginationMini({
   onPageChange: (page: number) => void
 }) {
   if (totalPages <= 1) return null
+  const visiblePages = getVisiblePages(page, totalPages)
 
   return (
     <div className="mt-3 flex items-center justify-end gap-2">
@@ -570,9 +571,29 @@ function PaginationMini({
       >
         Oldingi
       </button>
-      <span className="text-xs text-text-muted">
-        {page} / {totalPages}
-      </span>
+      <div className="flex items-center gap-1">
+        {visiblePages.map((nextPage, index) =>
+          nextPage === 'ellipsis' ? (
+            <span key={`ellipsis-${index}`} className="flex h-7 w-7 items-center justify-center text-xs text-text-muted">
+              ...
+            </span>
+          ) : (
+            <button
+              key={nextPage}
+              type="button"
+              className={cn(
+                'h-7 w-7 rounded-md text-xs font-medium transition-colors',
+                nextPage === page
+                  ? 'bg-primary text-white'
+                  : 'text-text-secondary hover:bg-surface-2'
+              )}
+              onClick={() => onPageChange(nextPage)}
+            >
+              {nextPage}
+            </button>
+          )
+        )}
+      </div>
       <button
         type="button"
         className="kas-btn-ghost text-xs"

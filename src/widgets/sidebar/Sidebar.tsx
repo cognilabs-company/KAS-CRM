@@ -1,7 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft,
-  ChevronRight,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -12,7 +10,6 @@ import {
   UserCircle,
   Users,
   X,
-  Zap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn, getInitials } from '@shared/lib/utils'
@@ -71,9 +68,22 @@ function SidebarContent({
         )}
       >
         <div className={cn('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
-          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <Zap size={14} className="text-white" />
-          </div>
+          <button
+            type="button"
+            onClick={mobile ? undefined : onToggleDesktop}
+            className={cn(
+              'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg',
+              !mobile && 'transition-opacity hover:opacity-80'
+            )}
+            aria-label={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
+            title={mobile ? undefined : collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
+          >
+            <img
+              src="/Logo-sidebar.jpg"
+              alt="KAS CRM"
+              className="h-7 w-7 rounded-lg object-cover"
+            />
+          </button>
           {(!collapsed || mobile) && (
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-text-primary leading-tight whitespace-nowrap">
@@ -162,25 +172,6 @@ function SidebarContent({
           )}
         </div>
 
-        {!mobile && (
-          <button
-            onClick={onToggleDesktop}
-            className={cn(
-              'hidden md:flex w-full items-center justify-center gap-2 py-2.5 px-3',
-              'text-xs text-text-muted hover:text-text-primary hover:bg-surface-2',
-              'border-t border-border transition-colors'
-            )}
-          >
-            {collapsed ? (
-              <ChevronRight size={14} />
-            ) : (
-              <>
-                <ChevronLeft size={14} />
-                <span>Yig&apos;ish</span>
-              </>
-            )}
-          </button>
-        )}
       </div>
     </>
   )

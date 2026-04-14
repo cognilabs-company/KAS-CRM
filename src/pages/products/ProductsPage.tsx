@@ -15,7 +15,7 @@ import {
   type BackendProductResponse,
 } from '@shared/api/backend'
 import { ConfirmDialog, SearchInput } from '@shared/ui/Controls'
-import { DataTable, type Column } from '@shared/ui/DataTable'
+import { DataTable, PaginationControls, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 import { StatusBadge } from '@shared/ui/StatusBadge'
 import { cn, truncate } from '@shared/lib/utils'
@@ -35,6 +35,8 @@ const APPLICATION_AREA_OPTIONS: Array<{ value: ApplicationArea; label: string }>
   { value: 'kanalizatsiya', label: 'Kanalizatsiya' },
   { value: 'isitish', label: 'Isitish' },
 ]
+
+const PAGE_SIZE_OPTIONS = [20, 45, 75, 100]
 
 interface ProductFormState {
   name: string
@@ -76,6 +78,7 @@ export function ProductsPage() {
   const [searchParams] = useSearchParams()
   const routeSearch = searchParams.get('search') ?? ''
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState(routeSearch)
   const [view, setView] = useState<ViewMode>('table')
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
@@ -96,11 +99,11 @@ export function ProductsPage() {
   }, [routeSearch])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products', page, search],
+    queryKey: ['products', page, pageSize, search],
     queryFn: () =>
       api
         .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
-          params: { page, size: 20, search: search.trim() || undefined },
+          params: { page, size: pageSize, search: search.trim() || undefined },
         })
         .then((response) => normalizePaginated(response.data, mapProductListItem)),
     staleTime: 5 * 60 * 1000,
@@ -336,6 +339,11 @@ export function ProductsPage() {
     updateMutation.mutate(editForm)
   }
 
+  function handlePageSizeChange(nextPageSize: number) {
+    setPageSize(nextPageSize)
+    setPage(1)
+  }
+
   const columns: Column<Product>[] = [
     {
       key: 'name',
@@ -403,6 +411,18 @@ export function ProductsPage() {
       product.id !== selectedProductId &&
       !selectedProduct?.alternatives.some((alternative) => alternative.id === product.id)
   )
+  const productPagination = data
+    ? {
+        page,
+        totalPages: data.totalPages,
+        total: data.total,
+        limit: data.limit,
+        onPageChange: setPage,
+        onLimitChange: handlePageSizeChange,
+        limitOptions: PAGE_SIZE_OPTIONS,
+      }
+    : undefined
+  const shouldShowProductPagination = Boolean(productPagination && productPagination.total > 0)
 
   return (
     <div className="mx-auto max-w-content p-4 sm:p-6">
@@ -449,39 +469,61 @@ export function ProductsPage() {
         </div>
       </div>
 
-      {view === 'grid' && !isLoading && data ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-          {data.data.map((product) => (
-            <div
-              key={product.id}
-              className="kas-card group cursor-pointer p-4 transition-colors hover:border-primary/30"
-              onClick={() => setSelectedProductId(product.id)}
-            >
-              <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-md bg-surface-2">
-                {product.imageUrl ? (
-                  <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
-                ) : (
-                  <Package size={32} className="text-text-muted" />
-                )}
-              </div>
-              <p className="truncate text-sm font-medium text-text-primary">{product.name}</p>
-              <p className="mt-0.5 text-xs font-mono text-text-muted">{product.sku}</p>
-              <div className="mt-3 flex items-center justify-between">
-                <StatusBadge variant={product.isActive ? 'active' : 'inactive'} />
-                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    className="kas-btn-ghost rounded p-1 hover:text-danger"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setDeleteTarget(product)
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+      {view === 'grid' ? (
+        <div className="space-y-4">
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: pageSize }).map((_, index) => (
+                <div key={index} className="kas-card p-4">
+                  <div className="mb-3 h-28 rounded-md bg-surface-2 animate-pulse" />
+                  <div className="h-4 w-3/4 rounded bg-surface-2 animate-pulse" />
+                  <div className="mt-2 h-3 w-24 rounded bg-surface-2 animate-pulse" />
+                  <div className="mt-3 h-6 w-14 rounded-full bg-surface-2 animate-pulse" />
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
+          ) : data && data.data.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              {data.data.map((product) => (
+                <div
+                  key={product.id}
+                  className="kas-card group cursor-pointer p-4 transition-colors hover:border-primary/30"
+                  onClick={() => setSelectedProductId(product.id)}
+                >
+                  <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-md bg-surface-2">
+                    {product.imageUrl ? (
+                      <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <Package size={32} className="text-text-muted" />
+                    )}
+                  </div>
+                  <p className="truncate text-sm font-medium text-text-primary">{product.name}</p>
+                  <p className="mt-0.5 text-xs font-mono text-text-muted">{product.sku}</p>
+                  <div className="mt-3 flex items-center justify-between">
+                    <StatusBadge variant={product.isActive ? 'active' : 'inactive'} />
+                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        className="kas-btn-ghost rounded p-1 hover:text-danger"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setDeleteTarget(product)
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="kas-card py-12 text-center text-text-muted">Mahsulot topilmadi</div>
+          )}
+          {shouldShowProductPagination && productPagination ? (
+            <div className="rounded-lg border border-border bg-surface">
+              <PaginationControls pagination={productPagination} />
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="kas-card">
@@ -491,17 +533,7 @@ export function ProductsPage() {
             keyField="id"
             loading={isLoading}
             onRowClick={(row) => setSelectedProductId(row.id)}
-            pagination={
-              data
-                ? {
-                    page,
-                    totalPages: data.totalPages,
-                    total: data.total,
-                    limit: data.limit,
-                    onPageChange: setPage,
-                  }
-                : undefined
-            }
+            pagination={productPagination}
             emptyMessage="Mahsulot topilmadi"
           />
         </div>

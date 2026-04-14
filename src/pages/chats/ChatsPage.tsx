@@ -1,6 +1,6 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ExternalLink, Filter, Mic, Send } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Filter, Image as ImageIcon, Loader2, Mic, Send, Volume2, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@shared/api/axios'
 import {
@@ -16,14 +16,247 @@ import { useUIStore } from '@shared/lib/store'
 import { useIsMobile } from '@shared/lib/useIsMobile'
 import { cn, formatChatDate, formatTime, getInitials, truncate } from '@shared/lib/utils'
 import { SearchInput } from '@shared/ui/Controls'
-import type { ChatMessage, ChatUser } from '@shared/types/api'
+import type { ChatMediaItem, ChatMessage, ChatUser } from '@shared/types/api'
 
-type ChatFilter = 'all' | 'voice' | 'lead'
+type ChatFilter = 'all' | 'voice' | 'lead' | 'lead_voice'
 
 const FILTER_LABELS: Record<ChatFilter, string> = {
   all: 'Barchasi',
   voice: 'Voice bor',
   lead: 'Lead yaratilgan',
+  lead_voice: 'Lead + voice',
+}
+
+const CHAT_FILTERS: ChatFilter[] = ['all', 'voice', 'lead', 'lead_voice']
+const CHAT_LIST_REFRESH_INTERVAL_MS = 3_000
+const CHAT_DETAIL_REFRESH_INTERVAL_MS = 2_000
+
+const SYSTEM_EVENT_LABELS: Partial<Record<NonNullable<ChatMessage['systemEvent']>, string>> = {
+  voice_deferred: 'Voice deferred',
+  photo_shared: 'Rasm yuborildi',
+  lead_created: 'Lead yaratildi',
+  location_sent: 'Lokatsiya yuborildi',
+  store_assigned: 'Magazin biriktirildi',
+  notification_sent: 'Xabarnoma yuborildi',
+}
+
+function getChatFilter(value: string | null): ChatFilter {
+  return value && CHAT_FILTERS.includes(value as ChatFilter) ? (value as ChatFilter) : 'all'
+}
+
+function getMediaRequestPath(rawUrl: string) {
+  const apiPrefix = '/api/v1'
+  let pathname = rawUrl
+  let search = ''
+
+  try {
+    const parsedUrl = new URL(rawUrl, window.location.origin)
+    pathname = parsedUrl.pathname
+    search = parsedUrl.search
+  } catch {
+    pathname = rawUrl
+  }
+
+  if (pathname.startsWith(apiPrefix)) {
+    return `${pathname.slice(apiPrefix.length)}${search}`
+  }
+
+  if (pathname.startsWith('/admin/chats/media/')) {
+    return `${pathname}${search}`
+  }
+
+  return `/admin/chats/media/${pathname.replace(/^\/+/, '')}${search}`
+}
+
+async function fetchMediaObjectUrl(rawUrl: string) {
+  const response = await api.get<Blob>(getMediaRequestPath(rawUrl), { responseType: 'blob' })
+  return URL.createObjectURL(response.data)
+}
+
+function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isOpen, setIsOpen] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [objectUrl])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
+  async function handleOpen() {
+    if (isLoading) return
+
+    if (!objectUrl) {
+      setIsLoading(true)
+      setError(null)
+      try {
+        const nextObjectUrl = await fetchMediaObjectUrl(item.url)
+        setObjectUrl(nextObjectUrl)
+        setIsOpen(true)
+      } catch {
+        setError("Rasmni yuklab bo'lmadi")
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+
+    setIsOpen(true)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={handleOpen}
+        className="relative flex h-36 w-56 max-w-full items-center justify-center overflow-hidden rounded-md border border-border/60 bg-background/40 text-left transition-colors hover:border-primary/70"
+      >
+        {objectUrl ? (
+          <img src={objectUrl} alt={item.filename ?? 'Chat rasmi'} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-text-secondary">
+            {isLoading ? <Loader2 size={22} className="animate-spin text-primary" /> : <ImageIcon size={22} />}
+            <span>{isLoading ? 'Rasm yuklanmoqda...' : 'Rasmni ochish'}</span>
+          </div>
+        )}
+      </button>
+
+      {error && <p className="text-xs text-danger">{error}</p>}
+
+      {isOpen && objectUrl ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="absolute right-4 top-4 rounded-md bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+            aria-label="Rasmni yopish"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={objectUrl}
+            alt={item.filename ?? 'Chat rasmi'}
+            className="max-h-full max-w-full rounded-md object-contain"
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AuthenticatedAudio({ item }: { item: ChatMediaItem }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const shouldPlayRef = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [objectUrl])
+
+  useEffect(() => {
+    if (!objectUrl || !shouldPlayRef.current) return
+    shouldPlayRef.current = false
+    void audioRef.current?.play().catch(() => undefined)
+  }, [objectUrl])
+
+  async function loadAudio(autoplay = false) {
+    if (objectUrl) {
+      if (autoplay) void audioRef.current?.play().catch(() => undefined)
+      return
+    }
+
+    shouldPlayRef.current = shouldPlayRef.current || autoplay
+    if (isLoading) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const nextObjectUrl = await fetchMediaObjectUrl(item.url)
+      setObjectUrl(nextObjectUrl)
+    } catch {
+      shouldPlayRef.current = false
+      setError("Ovozli xabarni yuklab bo'lmadi")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        onPointerDownCapture={() => {
+          if (!objectUrl) void loadAudio(true)
+        }}
+        className="max-w-full"
+      >
+        <audio
+          ref={audioRef}
+          controls
+          preload="none"
+          src={objectUrl ?? undefined}
+          className={cn('h-9 w-56 max-w-full', !objectUrl && 'opacity-70')}
+        />
+      </div>
+
+      {!objectUrl && (
+        <button
+          type="button"
+          onClick={() => void loadAudio(true)}
+          disabled={isLoading}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 text-xs text-text-secondary transition-colors hover:border-primary/70 hover:text-text-primary disabled:opacity-60"
+        >
+          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Volume2 size={13} />}
+          {isLoading ? 'Yuklanmoqda...' : 'Ovozni eshitish'}
+        </button>
+      )}
+
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
+  )
+}
+
+function MessageMedia({ items }: { items: ChatMediaItem[] }) {
+  if (items.length === 0) return null
+
+  return (
+    <div className="mt-2 space-y-2">
+      {items.map((item, index) => {
+        if (item.kind === 'image') {
+          return <AuthenticatedImage key={`${item.url}-${index}`} item={item} />
+        }
+
+        if (item.kind === 'audio') {
+          return <AuthenticatedAudio key={`${item.url}-${index}`} item={item} />
+        }
+
+        return null
+      })}
+    </div>
+  )
 }
 
 export function ChatsPage() {
@@ -31,11 +264,12 @@ export function ChatsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialSearch = searchParams.get('search') ?? ''
+  const routedFilter = getChatFilter(searchParams.get('tab'))
   const routedChatId = searchParams.get('chatId')
   const routedUserId = searchParams.get('userId')
 
   const [search, setSearch] = useState(initialSearch)
-  const [filter, setFilter] = useState<ChatFilter>('all')
+  const [filter, setFilter] = useState<ChatFilter>(routedFilter)
   const [activeChatId, setActiveChatId] = useState<string | null>(routedChatId)
   const [messageInput, setMessageInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -49,6 +283,10 @@ export function ChatsPage() {
   useEffect(() => {
     setSearch(initialSearch)
   }, [initialSearch])
+
+  useEffect(() => {
+    setFilter(routedFilter)
+  }, [routedFilter])
 
   useEffect(() => {
     if (suppressRouteSyncRef.current) {
@@ -72,20 +310,24 @@ export function ChatsPage() {
             page: 1,
             size: 100,
             search: deferredSearch || undefined,
-            has_voice: filter === 'voice' ? true : undefined,
-            has_lead: filter === 'lead' ? true : undefined,
+            tab: filter,
             user_id: routedUserId || undefined,
           },
         })
         .then((response) => normalizePaginated(response.data, mapChatListItem)),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
   })
 
   const chats = chatsData?.data ?? []
 
   useEffect(() => {
     if (isMobile) return
-    if (activeChatId || chats.length === 0) return
+    if (chats.length === 0) return
+    if (activeChatId && chats.some((chat) => chat.id === activeChatId)) return
     const firstChatId = chats[0]?.id
     if (!firstChatId) return
     setActiveChatId(firstChatId)
@@ -104,12 +346,18 @@ export function ChatsPage() {
     queryFn: () =>
       api.get<BackendChatResponse>(`/admin/chats/${activeChatId}`).then((response) => response.data),
     enabled: Boolean(activeChatId),
+    staleTime: 0,
+    refetchInterval: activeChatId ? CHAT_DETAIL_REFRESH_INTERVAL_MS : false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
   })
 
   const messages: ChatMessage[] = useMemo(
     () => (chatDetail?.messages ?? []).map((message: BackendChatMessageResponse) => mapChatMessage(message)),
     [chatDetail?.messages]
   )
+  const latestMessageId = messages[messages.length - 1]?.id
 
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
@@ -131,7 +379,7 @@ export function ChatsPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-  }, [messages])
+  }, [latestMessageId, messages.length])
 
   const groupedMessages = useMemo(() => {
     const groups: { date: string; messages: ChatMessage[] }[] = []
@@ -162,12 +410,33 @@ export function ChatsPage() {
     })
   }
 
+  function handleFilterChange(nextFilter: ChatFilter) {
+    setFilter(nextFilter)
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', nextFilter)
+    nextParams.delete('page')
+    if (search.trim()) nextParams.set('search', search.trim())
+    else nextParams.delete('search')
+
+    startTransition(() => {
+      setSearchParams(nextParams, { replace: true })
+    })
+  }
+
   function closeActiveChat() {
     suppressRouteSyncRef.current = true
     setActiveChatId(null)
     const nextParams = new URLSearchParams(searchParams)
     nextParams.delete('chatId')
     setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleSendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const content = messageInput.trim()
+    if (!content || sendMutation.isPending) return
+    sendMutation.mutate(content)
   }
 
   const showChatList = !isMobile || !activeChat
@@ -183,11 +452,11 @@ export function ChatsPage() {
             onChange={setSearch}
             placeholder="Ism yoki username bo'yicha qidirish..."
           />
-          <div className="grid grid-cols-3 gap-1">
-            {(Object.keys(FILTER_LABELS) as ChatFilter[]).map((value) => (
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+            {CHAT_FILTERS.map((value) => (
               <button
                 key={value}
-                onClick={() => setFilter(value)}
+                onClick={() => handleFilterChange(value)}
                 className={cn(
                   'min-h-10 px-2 py-1 rounded text-[11px] sm:text-xs font-medium transition-colors text-center leading-tight',
                   filter === value
@@ -300,17 +569,38 @@ export function ChatsPage() {
 
                   {group.messages.map((message) => {
                     if (message.type === 'system') {
+                      const eventLabel = message.systemEvent
+                        ? SYSTEM_EVENT_LABELS[message.systemEvent] ?? message.systemEvent
+                        : null
+                      const isVoiceDeferred = message.systemEvent === 'voice_deferred'
+
                       return (
                         <div key={message.id} className="flex justify-center my-2">
-                          <span className="text-xs text-text-muted bg-surface-2 px-3 py-1.5 rounded-full border border-border">
-                            {message.content}
-                          </span>
+                          <div
+                            className={cn(
+                              'flex max-w-[85%] items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-text-muted',
+                              isVoiceDeferred && 'border-warning/20 bg-warning/5 italic opacity-80'
+                            )}
+                          >
+                            {eventLabel && (
+                              <span className="kas-badge rounded-md border border-border/70 bg-background/50 px-1.5 py-0 text-[10px] not-italic">
+                                {eventLabel}
+                              </span>
+                            )}
+                            <span>{message.content}</span>
+                          </div>
                         </div>
                       )
                     }
 
                     const isBot = message.type === 'bot'
                     const isVoice = message.type === 'voice'
+                    const eventLabel = message.systemEvent
+                      ? SYSTEM_EVENT_LABELS[message.systemEvent] ?? message.systemEvent
+                      : null
+                    const isMediaPlaceholder =
+                      message.content === '[Voice message]' || message.content === '[Photo message]'
+                    const showContent = Boolean(message.content.trim()) && !(isMediaPlaceholder && message.hasMedia)
 
                     return (
                       <div
@@ -337,9 +627,25 @@ export function ChatsPage() {
                                 </p>
                               )}
                             </div>
-                          ) : (
-                            <p>{message.content}</p>
+                          ) : showContent ? (
+                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                          ) : null}
+
+                          {eventLabel && (
+                            <span
+                              className={cn(
+                                'mt-2 inline-flex rounded-md border px-2 py-0.5 text-[10px] font-medium',
+                                isBot
+                                  ? 'border-white/20 bg-white/10 text-white/80'
+                                  : 'border-border/70 bg-background/40 text-text-secondary'
+                              )}
+                            >
+                              {eventLabel}
+                            </span>
                           )}
+
+                          <MessageMedia items={message.mediaItems} />
+
                           <p
                             className={cn(
                               'text-xs mt-1 text-right',
@@ -358,22 +664,17 @@ export function ChatsPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-3 sm:p-4 border-t border-border flex-shrink-0 bg-surface">
+          <form onSubmit={handleSendMessage} className="p-3 sm:p-4 border-t border-border flex-shrink-0 bg-surface">
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={messageInput}
                 onChange={(event) => setMessageInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && messageInput.trim()) {
-                    sendMutation.mutate(messageInput.trim())
-                  }
-                }}
                 placeholder="Xabar yozing..."
                 className="kas-input flex-1"
               />
               <button
-                onClick={() => messageInput.trim() && sendMutation.mutate(messageInput.trim())}
+                type="submit"
                 disabled={!messageInput.trim() || sendMutation.isPending}
                 className="kas-btn-primary px-3 py-2 disabled:opacity-50"
               >
@@ -383,7 +684,7 @@ export function ChatsPage() {
             <p className="text-xs text-text-muted mt-2">
               Operator sifatida Telegram orqali xabar yuboriladi
             </p>
-          </div>
+          </form>
         </div>
       ) : (
         <div className="hidden flex-1 items-center justify-center bg-background md:flex">

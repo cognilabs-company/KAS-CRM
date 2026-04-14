@@ -172,7 +172,16 @@ export interface BackendChatListItem {
   last_message_at: string
   last_message_preview: string
   message_count: number
+  has_voice?: boolean
+  has_lead?: boolean
   started_at: string
+}
+
+export interface BackendChatMediaItem {
+  url: string
+  kind: 'image' | 'audio'
+  filename?: string | null
+  extension?: string | null
 }
 
 export interface BackendChatMessageResponse {
@@ -180,7 +189,17 @@ export interface BackendChatMessageResponse {
   content: string
   message_type: 'text' | 'voice' | 'location' | 'event'
   voice_transcript?: string | null
-  event_type?: 'location_sent' | 'lead_created' | 'store_assigned' | 'notification_sent' | null
+  event_type?:
+    | 'location_sent'
+    | 'lead_created'
+    | 'store_assigned'
+    | 'notification_sent'
+    | 'voice_deferred'
+    | 'photo_shared'
+    | null
+  media_urls?: string[]
+  has_media?: boolean
+  media_items?: BackendChatMediaItem[]
   chat_id: string
   id: string
   timestamp: string
@@ -286,6 +305,13 @@ export function clearStoredAuth() {
   localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY)
 }
 
+export function normalizeAdminAvailablePages(role: UserRole, pages: AdminPage[] = []): AdminPage[] {
+  if (role !== 'admin' && role !== 'superadmin') return pages
+
+  const adminPages = role === 'admin' ? pages.filter((page) => page !== 'ai_logs') : pages
+  return adminPages.includes('users') ? adminPages : [...adminPages, 'users']
+}
+
 export function buildAbsoluteMediaUrl(url?: string | null) {
   if (!url) return undefined
   if (/^https?:\/\//i.test(url)) return url
@@ -372,7 +398,7 @@ export function mapAdminUser(response: BackendAdminUserResponse): AuthUser {
     role: response.role,
     isActive: response.is_active,
     createdAt: response.created_at,
-    availablePages: response.available_pages,
+    availablePages: normalizeAdminAvailablePages(response.role, response.available_pages),
   }
 }
 
@@ -491,14 +517,34 @@ export function mapChatListItem(item: BackendChatListItem): ChatUser {
     lastMessage: item.last_message_preview,
     lastMessageTime: item.last_message_at,
     unreadCount: 0,
-    hasVoice: false,
-    hasLead: Boolean(item.lead_id),
+    hasVoice: item.has_voice ?? false,
+    hasLead: item.has_lead ?? Boolean(item.lead_id),
     messageCount: item.message_count,
     startedAt: item.started_at,
   }
 }
 
 export function mapChatMessage(item: BackendChatMessageResponse): ChatMessage {
+  const rawMediaItems =
+    item.media_items && item.media_items.length > 0
+      ? item.media_items
+      : (item.media_urls ?? []).map((url) => {
+          const extension = url.match(/\.[a-z0-9]+(?:$|\?)/i)?.[0].replace(/\?$/, '') ?? ''
+          return {
+            url,
+            kind: item.message_type === 'voice' ? 'audio' : 'image',
+            filename: url.split('/').pop() ?? undefined,
+            extension,
+          } satisfies BackendChatMediaItem
+        })
+
+  const mediaItems = rawMediaItems.map((mediaItem) => ({
+    url: mediaItem.url,
+    kind: mediaItem.kind,
+    filename: mediaItem.filename ?? undefined,
+    extension: mediaItem.extension ?? undefined,
+  }))
+
   return {
     id: item.id,
     type:
@@ -512,6 +558,8 @@ export function mapChatMessage(item: BackendChatMessageResponse): ChatMessage {
     content: item.content,
     transcript: item.voice_transcript ?? undefined,
     systemEvent: item.event_type ?? undefined,
+    mediaItems,
+    hasMedia: Boolean(item.has_media || mediaItems.length > 0),
     timestamp: item.timestamp,
   }
 }
