@@ -1,6 +1,15 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ExternalLink, Filter, Image as ImageIcon, Loader2, Mic, Send, Volume2, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Filter, Image as ImageIcon, Loader2, Mic, Pause, Play, Send, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@shared/api/axios'
 import {
@@ -30,6 +39,7 @@ const FILTER_LABELS: Record<ChatFilter, string> = {
 const CHAT_FILTERS: ChatFilter[] = ['all', 'voice', 'lead', 'lead_voice']
 const CHAT_LIST_REFRESH_INTERVAL_MS = 3_000
 const CHAT_DETAIL_REFRESH_INTERVAL_MS = 2_000
+const VOICE_WAVEFORM_BARS = [8, 14, 10, 18, 24, 16, 28, 20, 12, 22, 30, 18, 26, 14, 20, 10, 16, 24, 12, 18]
 
 const SYSTEM_EVENT_LABELS: Partial<Record<NonNullable<ChatMessage['systemEvent']>, string>> = {
   voice_deferred: 'Voice deferred',
@@ -71,6 +81,15 @@ function getMediaRequestPath(rawUrl: string) {
 async function fetchMediaObjectUrl(rawUrl: string) {
   const response = await api.get<Blob>(getMediaRequestPath(rawUrl), { responseType: 'blob' })
   return URL.createObjectURL(response.data)
+}
+
+function formatAudioDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
+
+  const totalSeconds = Math.floor(seconds)
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
 function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
@@ -163,9 +182,12 @@ function AuthenticatedImage({ item }: { item: ChatMediaItem }) {
   )
 }
 
-function AuthenticatedAudio({ item }: { item: ChatMediaItem }) {
+function AuthenticatedAudio({ item, isBot = false }: { item: ChatMediaItem; isBot?: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const shouldPlayRef = useRef(false)
@@ -179,12 +201,12 @@ function AuthenticatedAudio({ item }: { item: ChatMediaItem }) {
   useEffect(() => {
     if (!objectUrl || !shouldPlayRef.current) return
     shouldPlayRef.current = false
-    void audioRef.current?.play().catch(() => undefined)
+    void audioRef.current?.play().catch(() => setIsPlaying(false))
   }, [objectUrl])
 
   async function loadAudio(autoplay = false) {
     if (objectUrl) {
-      if (autoplay) void audioRef.current?.play().catch(() => undefined)
+      if (autoplay) void audioRef.current?.play().catch(() => setIsPlaying(false))
       return
     }
 
@@ -205,41 +227,127 @@ function AuthenticatedAudio({ item }: { item: ChatMediaItem }) {
     }
   }
 
-  return (
-    <div className="space-y-1.5">
-      <div
-        onPointerDownCapture={() => {
-          if (!objectUrl) void loadAudio(true)
-        }}
-        className="max-w-full"
-      >
-        <audio
-          ref={audioRef}
-          controls
-          preload="none"
-          src={objectUrl ?? undefined}
-          className={cn('h-9 w-56 max-w-full', !objectUrl && 'opacity-70')}
-        />
-      </div>
+  async function handleTogglePlayback() {
+    if (isLoading) return
 
-      {!objectUrl && (
+    if (!objectUrl) {
+      await loadAudio(true)
+      return
+    }
+
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (audio.paused) {
+      void audio.play().catch(() => setIsPlaying(false))
+      return
+    }
+
+    audio.pause()
+  }
+
+  function handleLoadedMetadata() {
+    const nextDuration = audioRef.current?.duration ?? 0
+    setDuration(Number.isFinite(nextDuration) ? nextDuration : 0)
+  }
+
+  function handleSeek(event: MouseEvent<HTMLButtonElement>) {
+    if (!objectUrl || !duration || !audioRef.current) {
+      void loadAudio(true)
+      return
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1)
+    const nextTime = ratio * duration
+
+    audioRef.current.currentTime = nextTime
+    setCurrentTime(nextTime)
+  }
+
+  function handleEnded() {
+    setIsPlaying(false)
+    setCurrentTime(0)
+    if (audioRef.current) audioRef.current.currentTime = 0
+  }
+
+  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0
+  const displaySeconds = objectUrl && duration > 0 ? (isPlaying || currentTime > 0 ? currentTime : duration) : 0
+
+  return (
+    <div className="w-60 max-w-full space-y-1.5">
+      <div className="flex items-center gap-2.5">
         <button
           type="button"
-          onClick={() => void loadAudio(true)}
+          onClick={() => void handleTogglePlayback()}
           disabled={isLoading}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 text-xs text-text-secondary transition-colors hover:border-primary/70 hover:text-text-primary disabled:opacity-60"
+          className={cn(
+            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-70',
+            isBot ? 'bg-white text-primary hover:bg-white/90' : 'bg-primary text-white hover:bg-primary-hover'
+          )}
+          aria-label={isPlaying ? "Ovozli xabarni to'xtatish" : 'Ovozli xabarni ijro etish'}
         >
-          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Volume2 size={13} />}
-          {isLoading ? 'Yuklanmoqda...' : 'Ovozni eshitish'}
+          {isLoading ? (
+            <Loader2 size={17} className="animate-spin" />
+          ) : isPlaying ? (
+            <Pause size={16} fill="currentColor" />
+          ) : (
+            <Play size={16} fill="currentColor" className="ml-0.5" />
+          )}
         </button>
-      )}
+
+        <button
+          type="button"
+          onClick={handleSeek}
+          className="flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-md px-0.5"
+          aria-label="Ovozli xabar progressi"
+        >
+          {VOICE_WAVEFORM_BARS.map((height, index) => {
+            const barProgress = index / Math.max(VOICE_WAVEFORM_BARS.length - 1, 1)
+            const isActive = objectUrl && barProgress <= progress
+
+            return (
+              <span
+                key={`${height}-${index}`}
+                className={cn(
+                  'w-1 flex-shrink-0 rounded-full transition-colors',
+                  isBot
+                    ? isActive
+                      ? 'bg-white'
+                      : 'bg-white/35'
+                    : isActive
+                      ? 'bg-primary'
+                      : 'bg-text-muted/40'
+                )}
+                style={{ height }}
+              />
+            )
+          })}
+        </button>
+      </div>
+
+      <p className={cn('pl-11 text-[10px] leading-none', isBot ? 'text-white/65' : 'text-text-muted')}>
+        {formatAudioDuration(displaySeconds)}
+      </p>
+
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        src={objectUrl ?? undefined}
+        onLoadedMetadata={handleLoadedMetadata}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={handleEnded}
+        className="hidden"
+      />
 
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   )
 }
 
-function MessageMedia({ items }: { items: ChatMediaItem[] }) {
+function MessageMedia({ items, isBot = false }: { items: ChatMediaItem[]; isBot?: boolean }) {
   if (items.length === 0) return null
 
   return (
@@ -250,7 +358,7 @@ function MessageMedia({ items }: { items: ChatMediaItem[] }) {
         }
 
         if (item.kind === 'audio') {
-          return <AuthenticatedAudio key={`${item.url}-${index}`} item={item} />
+          return <AuthenticatedAudio key={`${item.url}-${index}`} item={item} isBot={isBot} />
         }
 
         return null
@@ -644,11 +752,11 @@ export function ChatsPage() {
                             </span>
                           )}
 
-                          <MessageMedia items={message.mediaItems} />
+                          <MessageMedia items={message.mediaItems} isBot={isBot} />
 
                           <p
                             className={cn(
-                              'text-xs mt-1 text-right',
+                              'mt-1.5 text-right text-[10px] leading-none',
                               isBot ? 'text-white/60' : 'text-text-muted'
                             )}
                           >
