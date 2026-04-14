@@ -1,5 +1,7 @@
 import {
   startTransition,
+  memo,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -10,6 +12,7 @@ import {
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ExternalLink, Filter, Image as ImageIcon, Loader2, Mic, Pause, Play, Send, X } from 'lucide-react'
+import { useInView } from 'react-intersection-observer'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '@shared/api/axios'
 import {
@@ -40,6 +43,7 @@ const CHAT_FILTERS: ChatFilter[] = ['all', 'voice', 'lead', 'lead_voice']
 const CHAT_LIST_REFRESH_INTERVAL_MS = 3_000
 const CHAT_DETAIL_REFRESH_INTERVAL_MS = 2_000
 const VOICE_WAVEFORM_BARS = [8, 14, 10, 18, 24, 16, 28, 20, 12, 22, 30, 18, 26, 14, 20, 10, 16, 24, 12, 18]
+const IMAGE_PRELOAD_ROOT_MARGIN = '320px 0px'
 
 const SYSTEM_EVENT_LABELS: Partial<Record<NonNullable<ChatMessage['systemEvent']>, string>> = {
   voice_deferred: 'Voice deferred',
@@ -49,6 +53,20 @@ const SYSTEM_EVENT_LABELS: Partial<Record<NonNullable<ChatMessage['systemEvent']
   store_assigned: 'Magazin biriktirildi',
   notification_sent: 'Xabarnoma yuborildi',
 }
+
+type AuthenticatedMediaProps = {
+  url: string
+  filename?: string
+  isBot?: boolean
+}
+
+type MediaObjectUrlCacheEntry = {
+  refs: number
+  objectUrl?: string
+  promise?: Promise<string>
+}
+
+const mediaObjectUrlCache = new Map<string, MediaObjectUrlCacheEntry>()
 
 function getChatFilter(value: string | null): ChatFilter {
   return value && CHAT_FILTERS.includes(value as ChatFilter) ? (value as ChatFilter) : 'all'
@@ -83,6 +101,122 @@ async function fetchMediaObjectUrl(rawUrl: string) {
   return URL.createObjectURL(response.data)
 }
 
+async function acquireMediaObjectUrl(rawUrl: string) {
+  let cacheEntry = mediaObjectUrlCache.get(rawUrl)
+
+  if (!cacheEntry) {
+    cacheEntry = { refs: 0 }
+    mediaObjectUrlCache.set(rawUrl, cacheEntry)
+  }
+
+  cacheEntry.refs += 1
+
+  if (cacheEntry.objectUrl) {
+    return cacheEntry.objectUrl
+  }
+
+  if (!cacheEntry.promise) {
+    cacheEntry.promise = fetchMediaObjectUrl(rawUrl)
+      .then((objectUrl) => {
+        cacheEntry.objectUrl = objectUrl
+        cacheEntry.promise = undefined
+        return objectUrl
+      })
+      .catch((error) => {
+        cacheEntry.promise = undefined
+        throw error
+      })
+  }
+
+  try {
+    return await cacheEntry.promise
+  } catch (error) {
+    cacheEntry.refs -= 1
+
+    if (cacheEntry.refs <= 0 && !cacheEntry.objectUrl) {
+      mediaObjectUrlCache.delete(rawUrl)
+    }
+
+    throw error
+  }
+}
+
+function releaseMediaObjectUrl(rawUrl: string) {
+  const cacheEntry = mediaObjectUrlCache.get(rawUrl)
+  if (!cacheEntry?.objectUrl) return
+
+  cacheEntry.refs -= 1
+
+  if (cacheEntry.refs <= 0) {
+    URL.revokeObjectURL(cacheEntry.objectUrl)
+    mediaObjectUrlCache.delete(rawUrl)
+  }
+}
+
+function useAuthenticatedMediaObjectUrl(rawUrl: string, errorMessage: string) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const acquiredUrlRef = useRef<string | null>(null)
+  const loadRequestRef = useRef(0)
+  const loadPromiseRef = useRef<Promise<string | null> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      loadRequestRef.current += 1
+
+      if (acquiredUrlRef.current) {
+        releaseMediaObjectUrl(acquiredUrlRef.current)
+        acquiredUrlRef.current = null
+      }
+    }
+  }, [])
+
+  const load = useCallback(async () => {
+    if (objectUrl) return objectUrl
+    if (loadPromiseRef.current) return loadPromiseRef.current
+
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    setIsLoading(true)
+    setError(null)
+
+    let nextLoadPromise: Promise<string | null>
+    nextLoadPromise = acquireMediaObjectUrl(rawUrl)
+      .then((nextObjectUrl) => {
+        if (loadRequestRef.current !== requestId) {
+          releaseMediaObjectUrl(rawUrl)
+          return null
+        }
+
+        acquiredUrlRef.current = rawUrl
+        setObjectUrl(nextObjectUrl)
+        return nextObjectUrl
+      })
+      .catch(() => {
+        if (loadRequestRef.current === requestId) {
+          setError(errorMessage)
+        }
+
+        return null
+      })
+      .finally(() => {
+        if (loadPromiseRef.current === nextLoadPromise) {
+          loadPromiseRef.current = null
+        }
+
+        if (loadRequestRef.current === requestId) {
+          setIsLoading(false)
+        }
+      })
+
+    loadPromiseRef.current = nextLoadPromise
+    return nextLoadPromise
+  }, [errorMessage, objectUrl, rawUrl])
+
+  return { objectUrl, isLoading, error, load }
+}
+
 function formatAudioDuration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
 
@@ -92,67 +226,21 @@ function formatAudioDuration(seconds: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBot?: boolean }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+const AuthenticatedImage = memo(function AuthenticatedImage({
+  url,
+  filename,
+  isBot = false,
+}: AuthenticatedMediaProps) {
+  const { objectUrl, isLoading, error, load } = useAuthenticatedMediaObjectUrl(url, "Rasmni yuklab bo'lmadi")
   const [isOpen, setIsOpen] = useState(false)
-  const hasStartedLoadingRef = useRef(false)
-  const openAfterLoadRef = useRef(false)
-  const isMountedRef = useRef(true)
+  const { ref: imageRef, inView } = useInView({
+    rootMargin: IMAGE_PRELOAD_ROOT_MARGIN,
+    triggerOnce: true,
+  })
 
   useEffect(() => {
-    isMountedRef.current = true
-
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [objectUrl])
-
-  async function loadImage(openAfterLoad = false) {
-    if (objectUrl) {
-      if (openAfterLoad) setIsOpen(true)
-      return
-    }
-
-    openAfterLoadRef.current = openAfterLoadRef.current || openAfterLoad
-    if (hasStartedLoadingRef.current) return
-
-    hasStartedLoadingRef.current = true
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const nextObjectUrl = await fetchMediaObjectUrl(item.url)
-
-      if (!isMountedRef.current) {
-        URL.revokeObjectURL(nextObjectUrl)
-        return
-      }
-
-      setObjectUrl(nextObjectUrl)
-
-      if (openAfterLoadRef.current) {
-        openAfterLoadRef.current = false
-        setIsOpen(true)
-      }
-    } catch {
-      hasStartedLoadingRef.current = false
-      if (isMountedRef.current) setError("Rasmni yuklab bo'lmadi")
-    } finally {
-      if (isMountedRef.current) setIsLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void loadImage()
-  }, [item.url])
+    if (inView) void load()
+  }, [inView, load])
 
   useEffect(() => {
     if (!isOpen) return
@@ -172,12 +260,14 @@ function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBo
   }, [isOpen])
 
   async function handleOpen() {
-    await loadImage(true)
+    const nextObjectUrl = objectUrl ?? (await load())
+    if (nextObjectUrl) setIsOpen(true)
   }
 
   return (
     <div className="max-w-full space-y-1.5">
       <button
+        ref={imageRef}
         type="button"
         onClick={handleOpen}
         className={cn(
@@ -188,7 +278,7 @@ function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBo
       >
         {objectUrl ? (
           <>
-            <img src={objectUrl} alt={item.filename ?? 'Chat rasmi'} className="h-full w-full object-cover" />
+            <img src={objectUrl} alt={filename ?? 'Chat rasmi'} className="h-full w-full object-cover" />
             <span className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
           </>
         ) : error ? (
@@ -222,7 +312,7 @@ function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBo
           </button>
           <img
             src={objectUrl}
-            alt={item.filename ?? 'Chat rasmi'}
+            alt={filename ?? 'Chat rasmi'}
             onClick={(event) => event.stopPropagation()}
             className="max-h-full max-w-full rounded-sm object-contain shadow-2xl"
           />
@@ -230,23 +320,15 @@ function AuthenticatedImage({ item, isBot = false }: { item: ChatMediaItem; isBo
       ) : null}
     </div>
   )
-}
+})
 
-function AuthenticatedAudio({ item, isBot = false }: { item: ChatMediaItem; isBot?: boolean }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+const AuthenticatedAudio = memo(function AuthenticatedAudio({ url, isBot = false }: AuthenticatedMediaProps) {
+  const { objectUrl, isLoading, error, load } = useAuthenticatedMediaObjectUrl(url, "Ovozli xabarni yuklab bo'lmadi")
   const [isPlaying, setIsPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
-  const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const shouldPlayRef = useRef(false)
-
-  useEffect(() => {
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [objectUrl])
 
   useEffect(() => {
     if (!objectUrl || !shouldPlayRef.current) return
@@ -262,19 +344,8 @@ function AuthenticatedAudio({ item, isBot = false }: { item: ChatMediaItem; isBo
 
     shouldPlayRef.current = shouldPlayRef.current || autoplay
     if (isLoading) return
-
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const nextObjectUrl = await fetchMediaObjectUrl(item.url)
-      setObjectUrl(nextObjectUrl)
-    } catch {
-      shouldPlayRef.current = false
-      setError("Ovozli xabarni yuklab bo'lmadi")
-    } finally {
-      setIsLoading(false)
-    }
+    const nextObjectUrl = await load()
+    if (!nextObjectUrl) shouldPlayRef.current = false
   }
 
   async function handleTogglePlayback() {
@@ -395,7 +466,7 @@ function AuthenticatedAudio({ item, isBot = false }: { item: ChatMediaItem; isBo
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   )
-}
+})
 
 function MessageMedia({ items, isBot = false }: { items: ChatMediaItem[]; isBot?: boolean }) {
   if (items.length === 0) return null
@@ -404,11 +475,18 @@ function MessageMedia({ items, isBot = false }: { items: ChatMediaItem[]; isBot?
     <div className="mt-2 space-y-2">
       {items.map((item, index) => {
         if (item.kind === 'image') {
-          return <AuthenticatedImage key={`${item.url}-${index}`} item={item} isBot={isBot} />
+          return (
+            <AuthenticatedImage
+              key={`${item.url}-${index}`}
+              url={item.url}
+              filename={item.filename}
+              isBot={isBot}
+            />
+          )
         }
 
         if (item.kind === 'audio') {
-          return <AuthenticatedAudio key={`${item.url}-${index}`} item={item} isBot={isBot} />
+          return <AuthenticatedAudio key={`${item.url}-${index}`} url={item.url} isBot={isBot} />
         }
 
         return null

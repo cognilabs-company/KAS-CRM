@@ -64,6 +64,7 @@ export function DashboardPage() {
 
   const stats = statsResponse ? mapDashboardStats(statsResponse) : null
   const regionsChart = statsResponse ? mapRegionData(statsResponse.leads_by_district) : []
+  const hasRegionsData = regionsChart.some((region) => region.leads > 0)
   const topProducts = statsResponse ? mapTopProducts(statsResponse.top_products) : []
   const recentLeads = statsResponse?.recent_leads.map(mapLeadListItem) ?? []
 
@@ -214,27 +215,33 @@ export function DashboardPage() {
           <h2 className="text-sm font-semibold text-text-primary">Hududlar bo&apos;yicha leadlar</h2>
           <p className="text-xs text-text-muted mt-0.5">Tumanlar bo&apos;yicha taqsimot</p>
         </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={regionsChart} barSize={24}>
-            <XAxis
-              dataKey="district"
-              tick={{ fill: '#8B8BA0', fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fill: '#8B8BA0', fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              width={30}
-            />
-            <Tooltip
-              {...CHART_STYLE.tooltip}
-              formatter={(value: number) => [value, 'Leadlar']}
-            />
-            <Bar dataKey="leads" fill="#4F6EF7" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {hasRegionsData ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={regionsChart} barSize={24}>
+              <XAxis
+                dataKey="district"
+                tick={{ fill: '#8B8BA0', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fill: '#8B8BA0', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={30}
+              />
+              <Tooltip
+                {...CHART_STYLE.tooltip}
+                formatter={(value: number) => [value, 'Leadlar']}
+              />
+              <Bar dataKey="leads" fill="#4F6EF7" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed border-border bg-surface-2/30 px-4 text-center text-sm text-text-muted">
+            Hududlar bo&apos;yicha lead statistikasi hali yo&apos;q
+          </div>
+        )}
       </div>
 
       <div className="kas-card">
