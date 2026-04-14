@@ -37,6 +37,32 @@ const APPLICATION_AREA_OPTIONS: Array<{ value: ApplicationArea; label: string }>
 ]
 
 const PAGE_SIZE_OPTIONS = [20, 45, 75, 100]
+const IMPORT_STEPS = [
+  ['1', "Ro'yxatni joylang"],
+  ['2', "Maydonlarni tekshiring"],
+  ['3', 'Import qiling'],
+] as const
+const PRODUCT_IMPORT_SAMPLE = JSON.stringify(
+  [
+    {
+      name: 'PPR Elbow 25mm',
+      sku: 'PPR-ELB-25',
+      category: 'fittings',
+      product_type: 'fiting',
+      size: '25mm',
+      description: 'High-pressure elbow fitting',
+      usage_area: 'issiq_suv',
+      material: 'PPR',
+      pressure_rating: 'PN20',
+      temperature_rating: '95C',
+      price: 12500,
+      is_active: true,
+      image_urls: [],
+    },
+  ],
+  null,
+  2
+)
 
 interface ProductFormState {
   name: string
@@ -85,9 +111,9 @@ export function ProductsPage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
   const [alternativeId, setAlternativeId] = useState('')
-  const [bulkImportValue, setBulkImportValue] = useState('')
+  const [importValue, setImportValue] = useState('')
   const [form, setForm] = useState<ProductFormState>(INITIAL_PRODUCT_FORM)
   const [editForm, setEditForm] = useState<ProductFormState>(INITIAL_PRODUCT_FORM)
   const uploadInputRef = useRef<HTMLInputElement>(null)
@@ -291,18 +317,34 @@ export function ProductsPage() {
       toast.error(getApiErrorMessage(error, "Alternativ mahsulotni olib tashlab bo'lmadi")),
   })
 
-  const bulkImportMutation = useMutation({
+  const importMutation = useMutation({
     mutationFn: () => {
-      const payload = JSON.parse(bulkImportValue)
+      let payload: unknown
+
+      try {
+        payload = JSON.parse(importValue)
+      } catch {
+        throw new Error("Import ma'lumotlarini tekshiring")
+      }
+
+      if (!Array.isArray(payload)) {
+        throw new Error("Import ro'yxat ko'rinishida bo'lishi kerak")
+      }
+
       return api.post('/admin/products/bulk-import', payload)
     },
     onSuccess: () => {
-      toast.success('Bulk import bajarildi')
-      setIsBulkImportOpen(false)
-      setBulkImportValue('')
+      toast.success('Import bajarildi')
+      setIsImportOpen(false)
+      setImportValue('')
       queryClient.invalidateQueries({ queryKey: ['products'] })
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, 'Bulk import bajarilmadi')),
+    onError: (error) =>
+      toast.error(
+        error instanceof Error && error.name !== 'AxiosError'
+          ? error.message
+          : getApiErrorMessage(error, 'Import bajarilmadi')
+      ),
   })
 
   function updateForm<K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) {
@@ -432,9 +474,9 @@ export function ProductsPage() {
           <p className="page-subtitle">{data ? `${data.total} ta mahsulot` : 'Yuklanmoqda...'}</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <button className="kas-btn-secondary w-full sm:w-auto" onClick={() => setIsBulkImportOpen(true)}>
+          <button className="kas-btn-secondary w-full sm:w-auto" onClick={() => setIsImportOpen(true)}>
             <Import size={16} />
-            Bulk import
+            Import
           </button>
           <button className="kas-btn-primary w-full sm:w-auto" onClick={openCreateDialog}>
             <Plus size={16} />
@@ -794,38 +836,79 @@ export function ProductsPage() {
       </ModalDialog>
 
       <ModalDialog
-        open={isBulkImportOpen}
-        title="Bulk import"
-        description="JSON array ko'rinishidagi mahsulotlarni `/admin/products/bulk-import` endpointiga yuboradi."
-        onClose={() => !bulkImportMutation.isPending && setIsBulkImportOpen(false)}
+        open={isImportOpen}
+        title="Import"
+        description="Bir nechta mahsulotni bitta ro'yxat bilan qo'shing."
+        onClose={() => !importMutation.isPending && setIsImportOpen(false)}
         className="max-w-3xl"
         footer={
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               className="kas-btn-secondary"
-              onClick={() => setIsBulkImportOpen(false)}
-              disabled={bulkImportMutation.isPending}
+              onClick={() => setIsImportOpen(false)}
+              disabled={importMutation.isPending}
             >
               Bekor qilish
             </button>
             <button
               type="button"
               className="kas-btn-primary"
-              onClick={() => bulkImportMutation.mutate()}
-              disabled={bulkImportMutation.isPending || !bulkImportValue.trim()}
+              onClick={() => importMutation.mutate()}
+              disabled={importMutation.isPending || !importValue.trim()}
             >
-              {bulkImportMutation.isPending ? 'Yuborilmoqda...' : 'Import qilish'}
+              {importMutation.isPending ? 'Yuborilmoqda...' : 'Import qilish'}
             </button>
           </div>
         }
       >
-        <textarea
-          className="kas-input min-h-[320px] resize-none font-mono text-xs"
-          value={bulkImportValue}
-          onChange={(event) => setBulkImportValue(event.target.value)}
-          placeholder='[{"name":"PPR Elbow 25mm","sku":"PPR-ELB-25","category":"fittings","product_type":"fiting","size":"25mm","description":"High-pressure elbow fitting","usage_area":"issiq_suv","material":"PPR","pressure_rating":"PN20","temperature_rating":"95C","price":12500,"is_active":true,"image_urls":[]}]'
-        />
+        <div className="space-y-4">
+          <div className="rounded-sm border border-primary/20 bg-primary/10 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm bg-primary text-white">
+                <Import size={17} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary">Mahsulotlarni import qilish</p>
+                <p className="mt-1 text-sm leading-relaxed text-text-secondary">
+                  Ro&apos;yxatni joylang, tekshiring va hammasini bir martada qo&apos;shing.
+                  Rasmlar keyin mahsulot tafsilotidan yuklanadi.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            {IMPORT_STEPS.map(([step, label]) => (
+              <div key={step} className="rounded-sm border border-border bg-surface-2/60 px-3 py-2">
+                <p className="text-[11px] font-semibold text-primary">Qadam {step}</p>
+                <p className="mt-1 text-xs text-text-secondary">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          <label className="block space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                Mahsulotlar ro&apos;yxati
+              </span>
+              <button
+                type="button"
+                className="kas-btn-secondary px-3 py-1.5 text-xs"
+                onClick={() => setImportValue(PRODUCT_IMPORT_SAMPLE)}
+                disabled={importMutation.isPending}
+              >
+                Namuna qo&apos;yish
+              </button>
+            </div>
+            <textarea
+              className="kas-input min-h-[260px] resize-none font-mono text-xs leading-relaxed"
+              value={importValue}
+              onChange={(event) => setImportValue(event.target.value)}
+              placeholder="Mahsulotlar ro'yxatini shu yerga joylang..."
+            />
+          </label>
+        </div>
       </ModalDialog>
     </div>
   )
