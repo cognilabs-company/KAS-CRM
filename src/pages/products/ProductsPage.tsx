@@ -117,6 +117,27 @@ function isKnownProductCategory(category: string) {
   return PRODUCT_CATEGORY_OPTIONS.some((option) => option === category)
 }
 
+function getProductImageDeleteUrl(imageUrl: string, productId?: string | null) {
+  const trimmedUrl = imageUrl.trim()
+
+  try {
+    const parsedUrl = new URL(trimmedUrl)
+    if (parsedUrl.pathname.startsWith('/media/product_image/')) {
+      return parsedUrl.pathname
+    }
+  } catch {
+    // Relative media paths are handled below.
+  }
+
+  const mediaPathIndex = trimmedUrl.indexOf('/media/product_image/')
+  if (mediaPathIndex >= 0) {
+    return trimmedUrl.slice(mediaPathIndex).split('?')[0]
+  }
+
+  const fileName = trimmedUrl.split(/[\\/]/).pop()?.split('?')[0]
+  return productId && fileName ? `/media/product_image/${productId}/${fileName}` : trimmedUrl
+}
+
 export function ProductsPage() {
   const [searchParams] = useSearchParams()
   const routeSearch = searchParams.get('search') ?? ''
@@ -328,7 +349,7 @@ export function ProductsPage() {
   const deleteImageMutation = useMutation({
     mutationFn: (imageUrl: string) =>
       api.delete<BackendProductResponse>(`/admin/products/${selectedProductId}/images`, {
-        params: { image_url: imageUrl },
+        params: { image_url: getProductImageDeleteUrl(imageUrl, selectedProductId) },
       }),
     onSuccess: () => {
       toast.success("Rasm o'chirildi")
