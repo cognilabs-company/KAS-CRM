@@ -190,6 +190,7 @@ export interface Product {
   imageUrl?: string
   imageUrls?: string[]
   price?: number
+  productWeight?: number
   alternatives: Array<{ id: string; name: string }>
   isActive: boolean
   createdAt: string

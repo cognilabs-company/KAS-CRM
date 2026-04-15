@@ -29,6 +29,16 @@ const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string }> = [
   { value: 'other', label: 'Boshqa' },
 ]
 
+const PRODUCT_CATEGORY_OPTIONS = [
+  'Flexible Hose',
+  'Floor Heating',
+  'Mixers & Accessories',
+  'Other',
+  'PPR',
+  'Sewage',
+  'Shut-off Valve',
+] as const
+
 const APPLICATION_AREA_OPTIONS: Array<{ value: ApplicationArea; label: string }> = [
   { value: 'issiq_suv', label: 'Issiq suv' },
   { value: 'sovuq_suv', label: 'Sovuq suv' },
@@ -47,7 +57,7 @@ const PRODUCT_IMPORT_SAMPLE = JSON.stringify(
     {
       name: 'PPR Elbow 25mm',
       sku: 'PPR-ELB-25',
-      category: 'fittings',
+      category: 'PPR',
       product_type: 'fiting',
       size: '25mm',
       description: 'High-pressure elbow fitting',
@@ -56,6 +66,7 @@ const PRODUCT_IMPORT_SAMPLE = JSON.stringify(
       pressure_rating: 'PN20',
       temperature_rating: '95C',
       price: 12500,
+      product_weight: 0.35,
       is_active: true,
       image_urls: [],
     },
@@ -76,6 +87,7 @@ interface ProductFormState {
   pressureRating: string
   temperatureRating: string
   price: string
+  productWeight: string
   isActive: boolean
   images: File[]
 }
@@ -92,12 +104,17 @@ const INITIAL_PRODUCT_FORM: ProductFormState = {
   pressureRating: 'PN20',
   temperatureRating: '95C',
   price: '',
+  productWeight: '',
   isActive: true,
   images: [],
 }
 
 function getProductTypeLabel(type: ProductType) {
   return PRODUCT_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type
+}
+
+function isKnownProductCategory(category: string) {
+  return PRODUCT_CATEGORY_OPTIONS.some((option) => option === category)
 }
 
 export function ProductsPage() {
@@ -170,6 +187,7 @@ export function ProductsPage() {
       pressureRating: selectedProduct.pressureSpec ?? '',
       temperatureRating: selectedProduct.temperatureSpec ?? '',
       price: selectedProduct.price != null ? String(selectedProduct.price) : '',
+      productWeight: selectedProduct.productWeight != null ? String(selectedProduct.productWeight) : '',
       isActive: selectedProduct.isActive,
       images: [],
     })
@@ -203,6 +221,9 @@ export function ProductsPage() {
         pressure_rating: payload.pressureRating.trim(),
         temperature_rating: payload.temperatureRating.trim(),
         price: normalizedPrice,
+        product_weight: payload.productWeight.trim()
+          ? Number(payload.productWeight.trim().replace(',', '.'))
+          : undefined,
         is_active: payload.isActive,
         image_urls: [],
       })
@@ -229,8 +250,12 @@ export function ProductsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (payload: ProductFormState) =>
-      api.patch<BackendProductResponse>(`/admin/products/${selectedProductId}`, {
+    mutationFn: (payload: ProductFormState) => {
+      if (!selectedProductId) {
+        throw new Error('Mahsulot tanlanmagan')
+      }
+
+      const updatePayload = {
         name: payload.name.trim(),
         sku: payload.sku.trim(),
         category: payload.category.trim(),
@@ -242,11 +267,34 @@ export function ProductsPage() {
         pressure_rating: payload.pressureRating.trim() || undefined,
         temperature_rating: payload.temperatureRating.trim() || undefined,
         price: payload.price.trim() ? Number(payload.price.trim().replace(',', '.')) : undefined,
+        product_weight: payload.productWeight.trim()
+          ? Number(payload.productWeight.trim().replace(',', '.'))
+          : undefined,
         is_active: payload.isActive,
-      }),
+      }
+
+      if (payload.images.length === 0) {
+        return api.patch<BackendProductResponse>(`/admin/products/${selectedProductId}`, updatePayload)
+      }
+
+      const formData = new FormData()
+      Object.entries(updatePayload).forEach(([key, value]) => {
+        if (value === undefined) return
+        formData.append(key, String(value))
+      })
+      formData.append('replace_existing_images', 'false')
+      payload.images.forEach((file) => formData.append('files', file))
+
+      return api.patch<BackendProductResponse>(`/admin/products/${selectedProductId}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+    },
     onSuccess: () => {
       toast.success('Mahsulot yangilandi')
       setIsEditOpen(false)
+      setEditForm((current) => ({ ...current, images: [] }))
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['product', selectedProductId] })
     },
@@ -362,6 +410,10 @@ export function ProductsPage() {
 
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     updateForm('images', Array.from(event.target.files ?? []))
+  }
+
+  function handleEditImageChange(event: ChangeEvent<HTMLInputElement>) {
+    updateEditForm('images', Array.from(event.target.files ?? []))
   }
 
   function handleDrawerImageUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -625,6 +677,11 @@ export function ProductsPage() {
                     <DrawerRow label="O'lcham" value={selectedProduct.size ?? '-'} mono />
                     <DrawerRow label="Narx" value={selectedProduct.price != null ? String(selectedProduct.price) : '-'} mono />
                     <DrawerRow label="Material" value={selectedProduct.material ?? '-'} />
+                    <DrawerRow
+                      label="Vazn"
+                      value={selectedProduct.productWeight != null ? String(selectedProduct.productWeight) : '-'}
+                      mono
+                    />
                     <DrawerRow label="Usage area" value={selectedProduct.usageArea ?? '-'} />
                     <DrawerRow label="Pressure" value={selectedProduct.pressureSpec ?? '-'} />
                     <DrawerRow label="Temperature" value={selectedProduct.temperatureSpec ?? '-'} />
@@ -801,7 +858,7 @@ export function ProductsPage() {
       <ModalDialog
         open={isEditOpen}
         title="Mahsulotni tahrirlash"
-        description="Product detail, update, image va alternatives endpointlariga ulangan."
+        description="Maydonlar va tanlangan rasmlar bitta product update endpointi orqali saqlanadi."
         onClose={() => !updateMutation.isPending && setIsEditOpen(false)}
         className="max-w-4xl"
         footer={
@@ -830,8 +887,8 @@ export function ProductsPage() {
           form={editForm}
           onSubmit={handleEditProduct}
           onChange={updateEditForm}
-          onImageChange={() => undefined}
-          showImages={false}
+          onImageChange={handleEditImageChange}
+          imageHelpText="Tanlangan rasmlar mavjud rasmlarga qo'shiladi."
         />
       </ModalDialog>
 
@@ -920,6 +977,7 @@ function ProductForm({
   onSubmit,
   onChange,
   onImageChange,
+  imageHelpText = 'Bir yoki bir nechta fayl yuklashingiz mumkin',
   showImages = true,
 }: {
   formId: string
@@ -927,6 +985,7 @@ function ProductForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onChange: <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => void
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void
+  imageHelpText?: string
   showImages?: boolean
 }) {
   return (
@@ -939,7 +998,19 @@ function ProductForm({
           <input className="kas-input" value={form.sku} onChange={(event) => onChange('sku', event.target.value)} placeholder="PPR-ELB-25" required />
         </FormField>
         <FormField label="Kategoriya" required>
-          <input className="kas-input" value={form.category} onChange={(event) => onChange('category', event.target.value)} placeholder="fittings" required />
+          <select className="kas-input" value={form.category} onChange={(event) => onChange('category', event.target.value)} required>
+            <option value="" disabled>
+              Kategoriyani tanlang
+            </option>
+            {form.category && !isKnownProductCategory(form.category) ? (
+              <option value={form.category}>{form.category}</option>
+            ) : null}
+            {PRODUCT_CATEGORY_OPTIONS.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
         </FormField>
         <FormField label="Product type" required>
           <select className="kas-input" value={form.productType} onChange={(event) => onChange('productType', event.target.value as ProductType)}>
@@ -974,6 +1045,9 @@ function ProductForm({
         <FormField label="Narx" required>
           <input type="number" step="0.01" className="kas-input" value={form.price} onChange={(event) => onChange('price', event.target.value)} placeholder="12500.00" required />
         </FormField>
+        <FormField label="Vazn">
+          <input type="number" step="0.001" className="kas-input" value={form.productWeight} onChange={(event) => onChange('productWeight', event.target.value)} placeholder="0.350" />
+        </FormField>
       </div>
 
       <FormField label="Tavsif" required>
@@ -986,7 +1060,7 @@ function ProductForm({
             <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2 px-4 py-5 text-center">
               <ImagePlus size={20} className="text-primary" />
               <span className="text-sm font-medium text-text-primary">Kompyuterdan rasm tanlash</span>
-              <span className="text-xs text-text-secondary">Bir yoki bir nechta fayl yuklashingiz mumkin</span>
+              <span className="text-xs text-text-secondary">{imageHelpText}</span>
               <input type="file" accept="image/*" multiple className="hidden" onChange={onImageChange} />
             </label>
           </FormField>

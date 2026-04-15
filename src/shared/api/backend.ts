@@ -231,6 +231,7 @@ export interface BackendProductListItem {
   product_type: 'fiting' | 'truba' | 'other'
   size?: string | null
   price?: string | null
+  product_weight?: string | null
   is_active: boolean
   image_urls: string[]
 }
@@ -577,6 +578,7 @@ export function mapProductListItem(item: BackendProductListItem): Product {
     imageUrl: imageUrls[0],
     imageUrls,
     price: item.price ? Number(item.price) : undefined,
+    productWeight: item.product_weight ? Number(item.product_weight) : undefined,
     alternatives: [],
     isActive: item.is_active,
     createdAt: '',
