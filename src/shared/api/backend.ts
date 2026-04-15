@@ -577,6 +577,7 @@ export function mapProductListItem(item: BackendProductListItem): Product {
     applicationAreas: [],
     imageUrl: imageUrls[0],
     imageUrls,
+    imageStorageUrls: item.image_urls,
     price: item.price ? Number(item.price) : undefined,
     productWeight: item.product_weight ? Number(item.product_weight) : undefined,
     alternatives: [],

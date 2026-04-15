@@ -723,20 +723,24 @@ export function ProductsPage() {
                     <p className="text-sm text-text-muted">Hozircha rasm yo&apos;q</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-3">
-                      {selectedProduct.imageUrls?.map((imageUrl) => (
-                        <div key={imageUrl} className="overflow-hidden rounded-xl border border-border bg-surface-2">
-                          <img src={imageUrl} alt={selectedProduct.name} className="h-32 w-full object-cover" />
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-center gap-2 border-t border-border px-3 py-2 text-xs text-danger"
-                            onClick={() => deleteImageMutation.mutate(imageUrl)}
-                            disabled={deleteImageMutation.isPending}
-                          >
-                            <Trash2 size={12} />
-                            O&apos;chirish
-                          </button>
-                        </div>
-                      ))}
+                      {selectedProduct.imageUrls?.map((imageUrl, imageIndex) => {
+                        const imageUrlToDelete = selectedProduct.imageStorageUrls?.[imageIndex] ?? imageUrl
+
+                        return (
+                          <div key={imageUrlToDelete} className="overflow-hidden rounded-xl border border-border bg-surface-2">
+                            <img src={imageUrl} alt={selectedProduct.name} className="h-32 w-full object-cover" />
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-center gap-2 border-t border-border px-3 py-2 text-xs text-danger"
+                              onClick={() => deleteImageMutation.mutate(imageUrlToDelete)}
+                              disabled={deleteImageMutation.isPending}
+                            >
+                              <Trash2 size={12} />
+                              O&apos;chirish
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

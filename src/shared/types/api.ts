@@ -189,6 +189,7 @@ export interface Product {
   description?: string
   imageUrl?: string
   imageUrls?: string[]
+  imageStorageUrls?: string[]
   price?: number
   productWeight?: number
   alternatives: Array<{ id: string; name: string }>
