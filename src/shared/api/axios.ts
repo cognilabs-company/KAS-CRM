@@ -23,6 +23,27 @@ const api = axios.create({
 
 let refreshPromise: Promise<string | null> | null = null
 
+function logApiError(error: unknown, context = 'API request failed') {
+  if (!axios.isAxiosError(error)) {
+    console.error(`[${context}]`, error)
+    return
+  }
+
+  const method = error.config?.method?.toUpperCase() ?? 'REQUEST'
+  const url = error.config?.url ?? 'unknown endpoint'
+  const status = error.response?.status
+  const statusText = error.response?.statusText
+
+  console.error(`[${context}] ${method} ${url}`, {
+    baseURL: error.config?.baseURL,
+    code: error.code,
+    message: error.message,
+    status,
+    statusText,
+    response: error.response?.data,
+  })
+}
+
 function redirectToLogin() {
   if (window.location.pathname !== '/login') {
     window.location.href = '/login'
@@ -45,7 +66,8 @@ async function refreshAccessToken() {
         useAuthStore.getState().updateAccessToken(tokens.access_token)
         return tokens.access_token
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        logApiError(error, 'Token refresh request failed')
         useAuthStore.getState().logout()
         clearStoredAuth()
         return null
@@ -66,7 +88,10 @@ api.interceptors.request.use(
     }
     return config
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    logApiError(error, 'API request setup failed')
+    return Promise.reject(error)
+  }
 )
 
 api.interceptors.response.use(
@@ -75,6 +100,7 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig | undefined
 
     if (!originalRequest || error.response?.status !== 401) {
+      logApiError(error)
       return Promise.reject(error)
     }
 
@@ -83,6 +109,7 @@ api.interceptors.response.use(
       originalRequest.url?.includes('/admin/auth/login') ||
       originalRequest.url?.includes('/admin/auth/refresh')
     ) {
+      logApiError(error)
       useAuthStore.getState().logout()
       redirectToLogin()
       return Promise.reject(error)
