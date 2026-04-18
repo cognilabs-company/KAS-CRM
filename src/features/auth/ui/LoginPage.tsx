@@ -26,7 +26,6 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -67,12 +66,6 @@ export function LoginPage() {
       toast.error("Email yoki parol noto'g'ri")
     },
   })
-
-  const demoAccount = {
-    email: 'test1234567@gmail.com',
-    password: 'test1234',
-    label: 'Test Admin',
-  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -147,24 +140,6 @@ export function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-5 pt-4 border-t border-border">
-            <p className="text-xs text-text-muted text-center mb-3">Test akkaunt</p>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-surface-2 hover:bg-border/50 transition-colors"
-              onClick={() => {
-                setValue('email', demoAccount.email)
-                setValue('password', demoAccount.password)
-                mutation.mutate({
-                  email: demoAccount.email,
-                  password: demoAccount.password,
-                })
-              }}
-            >
-              <span className="text-xs font-medium text-text-primary">{demoAccount.label}</span>
-              <span className="text-xs text-text-muted font-mono">{demoAccount.email}</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>
