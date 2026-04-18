@@ -22,6 +22,7 @@ import { cn, truncate } from '@shared/lib/utils'
 import type { ApplicationArea, Product, ProductType } from '@shared/types/api'
 
 type ViewMode = 'grid' | 'table'
+type ProductTypeFilter = ProductType | ''
 
 const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string }> = [
   { value: 'truba', label: 'Truba' },
@@ -113,6 +114,10 @@ function getProductTypeLabel(type: ProductType) {
   return PRODUCT_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type
 }
 
+function isProductType(value: string | null): value is ProductType {
+  return PRODUCT_TYPE_OPTIONS.some((option) => option.value === value)
+}
+
 function isKnownProductCategory(category: string) {
   return PRODUCT_CATEGORY_OPTIONS.some((option) => option === category)
 }
@@ -141,9 +146,14 @@ function getProductImageDeleteUrl(imageUrl: string, productId?: string | null) {
 export function ProductsPage() {
   const [searchParams] = useSearchParams()
   const routeSearch = searchParams.get('search') ?? ''
+  const routeCategory = searchParams.get('category') ?? ''
+  const routeProductType = searchParams.get('product_type')
+  const routeProductTypeFilter: ProductTypeFilter = isProductType(routeProductType) ? routeProductType : ''
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState(routeSearch)
+  const [categoryFilter, setCategoryFilter] = useState(routeCategory)
+  const [productTypeFilter, setProductTypeFilter] = useState<ProductTypeFilter>(routeProductTypeFilter)
   const [view, setView] = useState<ViewMode>('table')
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -162,12 +172,29 @@ export function ProductsPage() {
     setPage(1)
   }, [routeSearch])
 
+  useEffect(() => {
+    setCategoryFilter(routeCategory)
+    setPage(1)
+  }, [routeCategory])
+
+  useEffect(() => {
+    setProductTypeFilter(routeProductTypeFilter)
+    setPage(1)
+  }, [routeProductTypeFilter])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['products', page, pageSize, search],
-    queryFn: () =>
+    queryKey: ['products', page, pageSize, search, categoryFilter, productTypeFilter],
+    queryFn: ({ signal }) =>
       api
         .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
-          params: { page, size: pageSize, search: search.trim() || undefined },
+          params: {
+            page,
+            size: pageSize,
+            search: search.trim() || undefined,
+            category: categoryFilter || undefined,
+            product_type: productTypeFilter || undefined,
+          },
+          signal,
         })
         .then((response) => normalizePaginated(response.data, mapProductListItem)),
     staleTime: 5 * 60 * 1000,
@@ -184,10 +211,11 @@ export function ProductsPage() {
 
   const alternativeOptionsQuery = useQuery({
     queryKey: ['product-alternative-options', selectedProductId],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api
         .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
           params: { page: 1, size: 100 },
+          signal,
         })
         .then((response) => normalizePaginated(response.data, mapProductListItem)),
     enabled: Boolean(selectedProductId),
@@ -459,6 +487,13 @@ export function ProductsPage() {
     setPage(1)
   }
 
+  function clearProductFilters() {
+    setSearch('')
+    setCategoryFilter('')
+    setProductTypeFilter('')
+    setPage(1)
+  }
+
   const columns: Column<Product>[] = [
     {
       key: 'name',
@@ -538,6 +573,7 @@ export function ProductsPage() {
       }
     : undefined
   const shouldShowProductPagination = Boolean(productPagination && productPagination.total > 0)
+  const hasActiveProductFilters = Boolean(search.trim() || categoryFilter || productTypeFilter)
 
   return (
     <div className="mx-auto max-w-content p-4 sm:p-6">
@@ -558,7 +594,7 @@ export function ProductsPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
         <SearchInput
           value={search}
           onChange={(value) => {
@@ -566,9 +602,51 @@ export function ProductsPage() {
             setPage(1)
           }}
           placeholder="Nom yoki SKU..."
-          className="w-full sm:w-72"
+          className="w-full lg:w-72"
         />
-        <div className="flex items-center gap-1 rounded-md bg-surface-2 p-0.5 sm:ml-auto self-start sm:self-auto">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto">
+          <select
+            className="kas-input w-full lg:w-52"
+            value={categoryFilter}
+            onChange={(event) => {
+              setCategoryFilter(event.target.value)
+              setPage(1)
+            }}
+            aria-label="Kategoriya filteri"
+          >
+            <option value="">Barcha kategoriyalar</option>
+            {categoryFilter && !isKnownProductCategory(categoryFilter) ? (
+              <option value={categoryFilter}>{categoryFilter}</option>
+            ) : null}
+            {PRODUCT_CATEGORY_OPTIONS.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+          <select
+            className="kas-input w-full lg:w-44"
+            value={productTypeFilter}
+            onChange={(event) => {
+              setProductTypeFilter(event.target.value as ProductTypeFilter)
+              setPage(1)
+            }}
+            aria-label="Mahsulot turi filteri"
+          >
+            <option value="">Barcha turlar</option>
+            {PRODUCT_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {hasActiveProductFilters ? (
+          <button className="kas-btn-secondary w-full lg:w-auto" onClick={clearProductFilters}>
+            Tozalash
+          </button>
+        ) : null}
+        <div className="flex items-center gap-1 rounded-md bg-surface-2 p-0.5 lg:ml-auto self-start lg:self-auto">
           <button
             onClick={() => setView('table')}
             className={cn('rounded p-2', view === 'table' ? 'bg-surface text-text-primary' : 'text-text-muted')}

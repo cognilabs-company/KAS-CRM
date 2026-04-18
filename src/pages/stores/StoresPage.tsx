@@ -83,10 +83,11 @@ export function StoresPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['stores', page, search],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api
         .get<BackendPaginated<BackendStoreListItem>>('/admin/stores/', {
           params: { page, size: 20, search: search.trim() || undefined },
+          signal,
         })
         .then((response) => normalizePaginated(response.data, mapStoreListItem)),
     staleTime: 5 * 60 * 1000,

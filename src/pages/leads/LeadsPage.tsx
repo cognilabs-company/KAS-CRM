@@ -61,9 +61,12 @@ export function LeadsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['leads', queryParams],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api
-        .get<BackendPaginated<BackendLeadListItem>>('/admin/leads/', { params: queryParams })
+        .get<BackendPaginated<BackendLeadListItem>>('/admin/leads/', {
+          params: queryParams,
+          signal,
+        })
         .then((response) => normalizePaginated(response.data, mapLeadListItem)),
     staleTime: 5 * 60 * 1000,
   })

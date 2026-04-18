@@ -88,11 +88,12 @@ export async function warmUpAppCache(availablePages: AdminPage[]) {
   if (availablePages.includes('products')) {
     tasks.push(
       queryClient.prefetchQuery({
-        queryKey: ['products', 1, ''],
-        queryFn: () =>
+        queryKey: ['products', 1, 20, '', '', ''],
+        queryFn: ({ signal }) =>
           api
             .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
               params: { page: 1, size: 20 },
+              signal,
             })
             .then((response) => normalizePaginated(response.data, mapProductListItem)),
       }),

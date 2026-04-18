@@ -59,7 +59,7 @@ export function UsersPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', page, search, status],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api
         .get<BackendPaginated<BackendTelegramUserListItem>>('/admin/users/', {
           params: {
@@ -68,6 +68,7 @@ export function UsersPage() {
             search: search.trim() || undefined,
             status: status || undefined,
           },
+          signal,
         })
         .then((response) => normalizePaginated(response.data, mapTelegramUser)),
     staleTime: 5 * 60 * 1000,

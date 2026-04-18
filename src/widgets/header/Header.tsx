@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -34,6 +34,7 @@ import {
 } from '@shared/api/backend'
 import { useAuthStore, useUIStore } from '@shared/lib/store'
 import { useIsMobile } from '@shared/lib/useIsMobile'
+import { useDebouncedValue } from '@shared/lib/useDebouncedValue'
 import { formatRelative, getInitials, truncate } from '@shared/lib/utils'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 import type { ChatUser, Lead, Product, Store } from '@shared/types/api'
@@ -106,7 +107,7 @@ export function Header() {
   const [createAdminForm, setCreateAdminForm] = useState<CreateAdminFormState>(INITIAL_CREATE_ADMIN_FORM)
   const searchRef = useRef<HTMLDivElement>(null)
   const notificationsRef = useRef<HTMLDivElement>(null)
-  const deferredSearch = useDeferredValue(search.trim())
+  const debouncedSearch = useDebouncedValue(search.trim(), 250)
 
   useOutsideClick(searchRef, () => setIsSearchOpen(false), isSearchOpen)
   useOutsideClick(notificationsRef, () => setIsNotificationsOpen(false), isNotificationsOpen)
@@ -117,44 +118,48 @@ export function Header() {
   const searchQueries = useQueries({
     queries: [
       {
-        queryKey: ['header-search-chats', deferredSearch],
-        queryFn: () =>
+        queryKey: ['header-search-chats', debouncedSearch],
+        queryFn: ({ signal }) =>
           api
             .get<BackendPaginated<BackendChatListItem>>('/admin/chats/', {
-              params: { search: deferredSearch, page: 1, size: 5 },
+              params: { search: debouncedSearch, page: 1, size: 5 },
+              signal,
             })
             .then((response) => normalizePaginated(response.data, mapChatListItem)),
-        enabled: deferredSearch.length >= 2,
+        enabled: debouncedSearch.length >= 2,
       },
       {
-        queryKey: ['header-search-leads', deferredSearch],
-        queryFn: () =>
+        queryKey: ['header-search-leads', debouncedSearch],
+        queryFn: ({ signal }) =>
           api
             .get<BackendPaginated<BackendLeadListItem>>('/admin/leads/', {
-              params: { search: deferredSearch, page: 1, size: 5 },
+              params: { search: debouncedSearch, page: 1, size: 5 },
+              signal,
             })
             .then((response) => normalizePaginated(response.data, mapLeadListItem)),
-        enabled: deferredSearch.length >= 2,
+        enabled: debouncedSearch.length >= 2,
       },
       {
-        queryKey: ['header-search-products', deferredSearch],
-        queryFn: () =>
+        queryKey: ['header-search-products', debouncedSearch],
+        queryFn: ({ signal }) =>
           api
             .get<BackendPaginated<BackendProductListItem>>('/admin/products/', {
-              params: { search: deferredSearch, page: 1, size: 4 },
+              params: { search: debouncedSearch, page: 1, size: 4 },
+              signal,
             })
             .then((response) => normalizePaginated(response.data, mapProductListItem)),
-        enabled: deferredSearch.length >= 2,
+        enabled: debouncedSearch.length >= 2,
       },
       {
-        queryKey: ['header-search-stores', deferredSearch],
-        queryFn: () =>
+        queryKey: ['header-search-stores', debouncedSearch],
+        queryFn: ({ signal }) =>
           api
             .get<BackendPaginated<BackendStoreListItem>>('/admin/stores/', {
-              params: { search: deferredSearch, page: 1, size: 4 },
+              params: { search: debouncedSearch, page: 1, size: 4 },
+              signal,
             })
             .then((response) => normalizePaginated(response.data, mapStoreListItem)),
-        enabled: deferredSearch.length >= 2,
+        enabled: debouncedSearch.length >= 2,
       },
     ],
   })
@@ -162,7 +167,7 @@ export function Header() {
   const [chatsResult, leadsResult, productsResult, storesResult] = searchQueries
 
   const searchResults = useMemo<SearchResult[]>(() => {
-    if (deferredSearch.length < 2) return []
+    if (debouncedSearch.length < 2) return []
 
     const chats = (chatsResult.data?.data ?? []).map<SearchResult>((chat: ChatUser) => ({
       id: chat.id,
@@ -203,11 +208,12 @@ export function Header() {
     return [...chats, ...leads, ...products, ...stores].slice(0, 10)
   }, [
     chatsResult.data?.data,
-    deferredSearch,
+    debouncedSearch,
     leadsResult.data?.data,
     productsResult.data?.data,
     storesResult.data?.data,
   ])
+  const isSearchLoading = searchQueries.some((query) => query.isFetching)
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard-stats'],
@@ -329,9 +335,13 @@ export function Header() {
 
             {isSearchOpen && (
               <div className="absolute top-[calc(100%+8px)] left-0 right-0 kas-card shadow-2xl overflow-hidden">
-                {deferredSearch.length < 2 ? (
+                {debouncedSearch.length < 2 ? (
                   <div className="px-4 py-3 text-xs text-text-muted">
                     Kamida 2 ta harf yozing
+                  </div>
+                ) : isSearchLoading && searchResults.length === 0 ? (
+                  <div className="px-4 py-3 text-xs text-text-muted">
+                    Qidirilmoqda...
                   </div>
                 ) : searchResults.length === 0 ? (
                   <div className="px-4 py-3 text-xs text-text-muted">

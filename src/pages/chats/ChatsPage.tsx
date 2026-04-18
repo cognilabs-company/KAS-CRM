@@ -2,7 +2,6 @@ import {
   startTransition,
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -512,7 +511,7 @@ export function ChatsPage() {
   const suppressRouteSyncRef = useRef(false)
 
   const queryClient = useQueryClient()
-  const deferredSearch = useDeferredValue(search)
+  const debouncedSearch = search.trim()
   const markChatRead = useUIStore((state) => state.markChatRead)
   const markNotificationSeen = useUIStore((state) => state.markNotificationSeen)
 
@@ -538,17 +537,18 @@ export function ChatsPage() {
   }, [routedChatId])
 
   const { data: chatsData } = useQuery({
-    queryKey: ['chats', deferredSearch, filter, routedUserId],
-    queryFn: () =>
+    queryKey: ['chats', debouncedSearch, filter, routedUserId],
+    queryFn: ({ signal }) =>
       api
         .get<BackendPaginated<BackendChatListItem>>('/admin/chats/', {
           params: {
             page: 1,
             size: 100,
-            search: deferredSearch || undefined,
+            search: debouncedSearch || undefined,
             tab: filter,
             user_id: routedUserId || undefined,
           },
+          signal,
         })
         .then((response) => normalizePaginated(response.data, mapChatListItem)),
     staleTime: 0,

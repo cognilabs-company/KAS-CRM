@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Search, X, AlertTriangle, type LucideIcon } from 'lucide-react'
 import { cn } from '@shared/lib/utils'
 
@@ -9,6 +9,7 @@ interface SearchInputProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  debounceMs?: number
 }
 
 export function SearchInput({
@@ -16,16 +17,62 @@ export function SearchInput({
   onChange,
   placeholder = 'Qidirish...',
   className,
+  debounceMs = 250,
 }: SearchInputProps) {
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const [draftValue, setDraftValue] = useState(value)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    setDraftValue(value)
+  }, [value])
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+      }
+    }
+  }, [])
+
+  const commitChange = useCallback(
+    (nextValue: string, immediate = false) => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+
+      if (immediate || debounceMs <= 0) {
+        onChange(nextValue)
+        return
+      }
+
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
+        onChange(nextValue)
+      }, debounceMs)
+    },
+    [debounceMs, onChange]
+  )
 
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value
-      clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => onChange(val), 300)
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const nextValue = event.target.value
+      setDraftValue(nextValue)
+      commitChange(nextValue)
     },
-    [onChange]
+    [commitChange]
+  )
+
+  const handleClear = useCallback(
+    () => {
+      setDraftValue('')
+      commitChange('', true)
+    },
+    [commitChange]
   )
 
   return (
@@ -36,14 +83,16 @@ export function SearchInput({
       />
       <input
         type="text"
-        value={value}
+        value={draftValue}
         onChange={handleChange}
         placeholder={placeholder}
         className="kas-input pl-9 pr-8"
       />
-      {value && (
+      {draftValue && (
         <button
-          onClick={() => onChange('')}
+          type="button"
+          onClick={handleClear}
+          aria-label="Qidiruvni tozalash"
           className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
         >
           <X size={14} />

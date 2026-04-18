@@ -201,8 +201,9 @@ export interface Product {
 export interface ProductFilters extends PaginationParams {
   search?: string
   category?: string
-  type?: ProductType
-  active?: boolean
+  product_type?: ProductType
+  usage_area?: string
+  is_active?: boolean
 }
 
 export interface Store {
