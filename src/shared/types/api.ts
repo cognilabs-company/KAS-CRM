@@ -119,6 +119,7 @@ export type SystemEventType =
   | 'notification_sent'
   | 'voice_deferred'
   | 'photo_shared'
+  | (string & {})
 
 export type ChatMediaKind = 'image' | 'audio'
 

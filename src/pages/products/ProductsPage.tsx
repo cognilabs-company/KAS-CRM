@@ -31,13 +31,14 @@ const PRODUCT_TYPE_OPTIONS: Array<{ value: ProductType; label: string }> = [
 ]
 
 const PRODUCT_CATEGORY_OPTIONS = [
-  'Flexible Hose',
-  'Floor Heating',
-  'Mixers & Accessories',
-  'Other',
-  'PPR',
-  'Sewage',
-  'Shut-off Valve',
+  'Фитинги из латуни',
+  'Запорная арматура',
+  'Прочие',
+  'Канализационные трубы и фитинги',
+  'Напольное отопление',
+  'ППР Трубы и фитинги',
+  'Смесители и аксессуары к ним',
+  'Подводка для газа и воды',
 ] as const
 
 const APPLICATION_AREA_OPTIONS: Array<{ value: ApplicationArea; label: string }> = [
@@ -58,7 +59,7 @@ const PRODUCT_IMPORT_SAMPLE = JSON.stringify(
     {
       name: 'PPR Elbow 25mm',
       sku: 'PPR-ELB-25',
-      category: 'PPR',
+      category: 'ППР Трубы и фитинги',
       product_type: 'fiting',
       size: '25mm',
       description: 'High-pressure elbow fitting',

@@ -53,6 +53,8 @@ const SYSTEM_EVENT_LABELS: Partial<Record<NonNullable<ChatMessage['systemEvent']
   notification_sent: 'Xabarnoma yuborildi',
 }
 
+const VISIBLE_SYSTEM_EVENTS = new Set(Object.keys(SYSTEM_EVENT_LABELS))
+
 type AuthenticatedMediaProps = {
   url: string
   filename?: string
@@ -223,6 +225,39 @@ function formatAudioDuration(seconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
   const remainingSeconds = totalSeconds % 60
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
+function isStructuredMessagePayload(content: string) {
+  const trimmed = content.trim()
+  if (!trimmed) return false
+
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function getVisibleSystemMessageContent(message: ChatMessage) {
+  if (isStructuredMessagePayload(message.content)) {
+    return ''
+  }
+
+  return message.content.trim()
+}
+
+function shouldHideSystemMessage(message: ChatMessage) {
+  if (message.type !== 'system') return false
+
+  if (message.systemEvent && !VISIBLE_SYSTEM_EVENTS.has(message.systemEvent)) {
+    return true
+  }
+
+  const visibleContent = getVisibleSystemMessageContent(message)
+  return !message.systemEvent && !visibleContent
 }
 
 const AuthenticatedImage = memo(function AuthenticatedImage({
@@ -590,7 +625,10 @@ export function ChatsPage() {
   })
 
   const messages: ChatMessage[] = useMemo(
-    () => (chatDetail?.messages ?? []).map((message: BackendChatMessageResponse) => mapChatMessage(message)),
+    () =>
+      (chatDetail?.messages ?? [])
+        .map((message: BackendChatMessageResponse) => mapChatMessage(message))
+        .filter((message) => !shouldHideSystemMessage(message)),
     [chatDetail?.messages]
   )
   const latestMessageId = messages[messages.length - 1]?.id
@@ -809,6 +847,7 @@ export function ChatsPage() {
                         ? SYSTEM_EVENT_LABELS[message.systemEvent] ?? message.systemEvent
                         : null
                       const isVoiceDeferred = message.systemEvent === 'voice_deferred'
+                      const visibleContent = getVisibleSystemMessageContent(message)
 
                       return (
                         <div key={message.id} className="flex justify-center my-2">
@@ -823,7 +862,7 @@ export function ChatsPage() {
                                 {eventLabel}
                               </span>
                             )}
-                            <span>{message.content}</span>
+                            {visibleContent && <span>{visibleContent}</span>}
                           </div>
                         </div>
                       )

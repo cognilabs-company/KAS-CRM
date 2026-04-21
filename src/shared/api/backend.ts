@@ -196,6 +196,7 @@ export interface BackendChatMessageResponse {
     | 'notification_sent'
     | 'voice_deferred'
     | 'photo_shared'
+    | string
     | null
   media_urls?: string[]
   has_media?: boolean
