@@ -74,6 +74,26 @@ export interface TopProduct {
   category: string
 }
 
+export interface LeadOrderItem {
+  index: number
+  productName: string
+  familyId: string | null
+  variantId: string | null
+  productId: string | null
+  productCode: string | null
+  variantCode: string | null
+  catalogCode: string | null
+  sizeLabel: string | null
+  quantity: number
+  unit: string | null
+  price: number | null
+  lineTotal: number | null
+  weight: string | null
+  brand: string | null
+  category: string | null
+  imageUrl: string | null
+}
+
 export interface Lead {
   id: string
   chatUserId?: string
@@ -95,6 +115,12 @@ export interface Lead {
     name: string
   }
   products: Array<{ id: string; name: string }>
+  orderItems: LeadOrderItem[]
+  orderId: string | null
+  isMultiorder: boolean
+  itemsCount: number
+  totalQuantity: number
+  totalAmount: number | null
   aiSummary: string
   source: string
   createdAt: string

@@ -11,6 +11,7 @@ import type {
   ChatUser,
   DashboardStats,
   Lead,
+  LeadOrderItem,
   PaginatedResponse,
   Product,
   RegionData,
@@ -129,6 +130,52 @@ export interface BackendStoreResponse extends BackendStoreListItem {
   updated_at: string
 }
 
+export interface BackendOrderSnapshot {
+  kind: 'product_family_variant'
+  family_id: string
+  product_code: string | null
+  product_name: string
+  variant_id: string
+  variant_code: string | null
+  catalog_code: string | null
+  size_label: string | null
+  quantity: number
+  price: number | null
+  price_currency: 'UZS' | 'USD' | null
+  usd_price: number | null
+  uzs_price: number | null
+  weight: string | null
+  unit: string | null
+  brand: string | null
+  category: string | null
+  bot_main_category_slug: string | null
+  bot_item_type: string | null
+  image_url: string | null
+}
+
+export interface BackendLeadOrderItem {
+  index: number
+  product_name: string
+  family_id: string | null
+  variant_id: string | null
+  product_id: string | null
+  product_code: string | null
+  variant_code: string | null
+  catalog_code: string | null
+  size_label: string | null
+  quantity: number
+  unit: string | null
+  price: number | null
+  line_total: number | null
+  weight: string | null
+  brand: string | null
+  category: string | null
+  bot_main_category_slug: string | null
+  bot_item_type: string | null
+  image_url: string | null
+  raw: Record<string, unknown>
+}
+
 export interface BackendLeadListItem {
   id: string
   telegram_id: number
@@ -139,7 +186,16 @@ export interface BackendLeadListItem {
   lead_source: string
   store_id?: string | null
   store_name?: string | null
-  interested_products: string[]
+  interested_products: BackendOrderSnapshot[]
+  order_id: string
+  order_session_id: string | null
+  order_type: 'single_order' | 'multiorder'
+  is_multiorder: boolean
+  items_count: number
+  total_quantity: number
+  products_preview: string[]
+  total_amount: number | null
+  order_items: BackendLeadOrderItem[]
   ai_summary: string
   created_at: string
 }
@@ -440,10 +496,36 @@ export function mapTopProducts(
   }))
 }
 
+function mapLeadOrderItem(item: BackendLeadOrderItem): LeadOrderItem {
+  return {
+    index: item.index,
+    productName: item.product_name,
+    familyId: item.family_id,
+    variantId: item.variant_id,
+    productId: item.product_id,
+    productCode: item.product_code,
+    variantCode: item.variant_code,
+    catalogCode: item.catalog_code,
+    sizeLabel: item.size_label,
+    quantity: item.quantity,
+    unit: item.unit,
+    price: item.price,
+    lineTotal: item.line_total,
+    weight: item.weight,
+    brand: item.brand,
+    category: item.category,
+    imageUrl: item.image_url,
+  }
+}
+
 export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLeadItem): Lead {
   const firstName = item.first_name ?? undefined
   const lastName = item.last_name ?? undefined
   const userId = 'user_id' in item ? (item as BackendLeadResponse).user_id : undefined
+  const isNewFormat = 'products_preview' in item
+  const productNames: string[] = isNewFormat
+    ? (item as BackendLeadListItem).products_preview
+    : (item.interested_products as string[])
   return {
     id: item.id,
     telegramId: String(item.telegram_id),
@@ -454,10 +536,18 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
     lastName,
     fullName: buildFullName(firstName, lastName, item.username),
     phone: item.phone ?? undefined,
-    products: item.interested_products.map((productName, index) => ({
+    products: productNames.map((productName, index) => ({
       id: `${item.id}-product-${index}`,
       name: productName,
     })),
+    orderItems: isNewFormat
+      ? (item as BackendLeadListItem).order_items.map(mapLeadOrderItem)
+      : [],
+    orderId: isNewFormat ? (item as BackendLeadListItem).order_id : null,
+    isMultiorder: isNewFormat ? (item as BackendLeadListItem).is_multiorder : false,
+    itemsCount: isNewFormat ? (item as BackendLeadListItem).items_count : productNames.length,
+    totalQuantity: isNewFormat ? (item as BackendLeadListItem).total_quantity : 0,
+    totalAmount: isNewFormat ? (item as BackendLeadListItem).total_amount : null,
     aiSummary: item.ai_summary,
     source: item.lead_source,
     nearestStore: item.store_name
@@ -473,6 +563,7 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
 
 export function mapLeadResponse(item: BackendLeadResponse): Lead {
   const fullName = buildFullName(item.user?.first_name, item.user?.last_name, item.username)
+  const productNames: string[] = item.interested_products as string[]
   return {
     id: item.id,
     telegramId: String(item.telegram_id),
@@ -496,10 +587,16 @@ export function mapLeadResponse(item: BackendLeadResponse): Lead {
           name: item.store.name,
         }
       : undefined,
-    products: item.interested_products.map((productName, index) => ({
+    products: productNames.map((productName, index) => ({
       id: `${item.id}-product-${index}`,
       name: productName,
     })),
+    orderItems: [],
+    orderId: null,
+    isMultiorder: false,
+    itemsCount: productNames.length,
+    totalQuantity: 0,
+    totalAmount: null,
     aiSummary: item.ai_summary,
     source: item.lead_source,
     createdAt: item.created_at,
