@@ -206,7 +206,7 @@ export interface BackendLeadResponse {
   phone?: string | null
   location_lat?: number | null
   location_lon?: number | null
-  interested_products: string[]
+  interested_products: Array<string | BackendOrderSnapshot>
   ai_summary: string
   lead_source: string
   user_id: string
@@ -565,7 +565,9 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
 
 export function mapLeadResponse(item: BackendLeadResponse): Lead {
   const fullName = buildFullName(item.user?.first_name, item.user?.last_name, item.username)
-  const productNames: string[] = item.interested_products as string[]
+  const productNames: string[] = (item.interested_products ?? [])
+    .map((p) => (typeof p === 'string' ? p : (p as BackendOrderSnapshot).product_name))
+    .filter((n): n is string => typeof n === 'string' && n.length > 0)
   return {
     id: item.id,
     telegramId: String(item.telegram_id),
