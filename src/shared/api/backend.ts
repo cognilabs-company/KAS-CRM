@@ -200,6 +200,18 @@ export interface BackendLeadListItem {
   created_at: string
 }
 
+export interface BackendLeadOrderData {
+  order_id: string
+  order_session_id: string | null
+  order_type: 'single_order' | 'multiorder'
+  is_multiorder: boolean
+  items_count: number
+  total_quantity: number
+  products_preview: string[]
+  total_amount: number | null
+  order_items: BackendLeadOrderItem[]
+}
+
 export interface BackendLeadResponse {
   telegram_id: number
   username?: string | null
@@ -214,6 +226,7 @@ export interface BackendLeadResponse {
   id: string
   user?: BackendTelegramUserListItem
   store?: BackendStoreListItem
+  order?: BackendLeadOrderData | null
   created_at: string
   updated_at: string
 }
@@ -546,6 +559,7 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
     })),
     orderItems: rawOrderItems.map(mapLeadOrderItem),
     orderId: isNewFormat ? (item as BackendLeadListItem).order_id : null,
+    orderType: isNewFormat ? (item as BackendLeadListItem).order_type : 'single_order',
     isMultiorder: isNewFormat ? (item as BackendLeadListItem).is_multiorder : false,
     itemsCount: isNewFormat ? (item as BackendLeadListItem).items_count : productNames.length,
     totalQuantity: isNewFormat ? (item as BackendLeadListItem).total_quantity : 0,
@@ -565,7 +579,10 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
 
 export function mapLeadResponse(item: BackendLeadResponse): Lead {
   const fullName = buildFullName(item.user?.first_name, item.user?.last_name, item.username)
-  const productNames: string[] = (item.interested_products ?? [])
+  const order = item.order ?? null
+  const productNames: string[] = order?.products_preview?.filter(
+    (n): n is string => typeof n === 'string' && n.length > 0
+  ) ?? (item.interested_products ?? [])
     .map((p) => (typeof p === 'string' ? p : (p as BackendOrderSnapshot).product_name))
     .filter((n): n is string => typeof n === 'string' && n.length > 0)
   return {
@@ -580,27 +597,22 @@ export function mapLeadResponse(item: BackendLeadResponse): Lead {
     phone: item.phone ?? item.user?.phone ?? undefined,
     location:
       item.location_lat != null && item.location_lon != null
-        ? {
-            lat: item.location_lat,
-            lng: item.location_lon,
-          }
+        ? { lat: item.location_lat, lng: item.location_lon }
         : undefined,
     nearestStore: item.store
-      ? {
-          id: item.store.id,
-          name: item.store.name,
-        }
+      ? { id: item.store.id, name: item.store.name }
       : undefined,
     products: productNames.map((productName, index) => ({
       id: `${item.id}-product-${index}`,
       name: productName,
     })),
-    orderItems: [],
-    orderId: null,
-    isMultiorder: false,
-    itemsCount: productNames.length,
-    totalQuantity: 0,
-    totalAmount: null,
+    orderItems: (order?.order_items ?? []).map(mapLeadOrderItem),
+    orderId: order?.order_id ?? null,
+    orderType: order?.order_type ?? 'single_order',
+    isMultiorder: order?.is_multiorder ?? false,
+    itemsCount: order?.items_count ?? productNames.length,
+    totalQuantity: order?.total_quantity ?? 0,
+    totalAmount: order?.total_amount ?? null,
     aiSummary: item.ai_summary,
     source: item.lead_source,
     createdAt: item.created_at,

@@ -16,7 +16,7 @@ import {
   type BackendPaginated,
   type BackendStoreListItem,
 } from '@shared/api/backend'
-import type { Lead, Store } from '@shared/types/api'
+import type { Lead, LeadOrderItem, Store } from '@shared/types/api'
 import { formatPhone, formatRelative, truncate } from '@shared/lib/utils'
 import { SearchInput } from '@shared/ui/Controls'
 import { DataTable, type Column } from '@shared/ui/DataTable'
@@ -26,6 +26,16 @@ interface LeadEditFormState {
   phone: string
   storeId: string
   aiSummary: string
+}
+
+const ORDER_TYPE_LABEL: Record<string, string> = {
+  single_order: 'Single order',
+  multiorder: 'Multiorder',
+}
+
+function formatAmount(amount: number | null): string {
+  if (amount == null) return '—'
+  return `${Math.round(amount).toLocaleString('uz-UZ')} so'm`
 }
 
 export function LeadsPage() {
@@ -125,19 +135,15 @@ export function LeadsPage() {
   const exportMutation = useMutation({
     mutationFn: async () => {
       const response = await api.get<Blob>('/admin/leads/export', {
-        params: {
-          search: search.trim() || undefined,
-        },
+        params: { search: search.trim() || undefined },
         responseType: 'blob',
       })
-
       const csvText = await response.data.text()
       const [headers = [], ...rows] = parseCsvRows(csvText)
-      const normalizedHeaders = headers.map((header) =>
-        header.replace(/^\uFEFF/, '').trim().toUpperCase()
+      const normalizedHeaders = headers.map((h) =>
+        h.replace(/^﻿/, '').trim().toUpperCase()
       )
       const normalizedRows = rows.filter((row) => row.some((cell) => cell.trim().length > 0))
-
       const blob = new Blob([buildExcelDocument(normalizedHeaders, normalizedRows)], {
         type: 'application/vnd.ms-excel;charset=utf-8',
       })
@@ -173,7 +179,7 @@ export function LeadsPage() {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
       queryClient.invalidateQueries({ queryKey: ['lead', lead.id] })
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, 'Leadni yangilab bo‘lmadi')),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Leadni yangilab bo'lmadi")),
   })
 
   function openLead(row: Lead) {
@@ -194,10 +200,12 @@ export function LeadsPage() {
 
   const columns: Column<Lead>[] = [
     {
-      key: 'id',
-      header: 'Lead ID',
+      key: 'orderId',
+      header: 'Order ID',
       render: (row) => (
-        <span className="font-mono text-xs text-text-muted">#{row.id.slice(-6).toUpperCase()}</span>
+        <span className="font-mono text-xs text-text-muted">
+          #{(row.orderId ?? row.id).slice(-6).toUpperCase()}
+        </span>
       ),
     },
     {
@@ -222,43 +230,76 @@ export function LeadsPage() {
     {
       key: 'products',
       header: 'Mahsulotlar',
+      render: (row) => {
+        const preview = row.products.slice(0, 2).map((p) => p.name).join(', ')
+        const hidden = row.itemsCount - row.products.slice(0, 2).length
+        return (
+          <span className="text-xs text-text-secondary max-w-[180px] block">
+            {preview || '-'}
+            {hidden > 0 && (
+              <span className="ml-1 kas-badge bg-surface-2 text-text-muted">+{hidden}</span>
+            )}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'orderType',
+      header: 'Turi',
       render: (row) => (
-        <div className="flex flex-wrap gap-1 max-w-[220px]">
-          {row.products.slice(0, 2).map((product) => (
-            <span key={product.id} className="kas-badge bg-primary/10 text-primary text-xs">
-              {truncate(product.name, 20)}
-            </span>
-          ))}
-          {row.products.length > 2 && (
-            <span className="kas-badge bg-surface-2 text-text-muted">
-              +{row.products.length - 2}
-            </span>
-          )}
-        </div>
+        <span
+          className={`kas-badge text-xs ${
+            row.isMultiorder
+              ? 'bg-primary/10 text-primary'
+              : 'bg-surface-2 text-text-secondary'
+          }`}
+        >
+          {ORDER_TYPE_LABEL[row.orderType] ?? row.orderType}
+        </span>
+      ),
+    },
+    {
+      key: 'itemsCount',
+      header: 'Soni',
+      render: (row) => (
+        <span className="text-xs text-text-secondary">
+          {row.itemsCount > 0 ? `${row.itemsCount} xil / ${row.totalQuantity} dona` : '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'totalAmount',
+      header: 'Jami summa',
+      render: (row) => (
+        <span className="font-mono text-xs text-text-primary whitespace-nowrap">
+          {formatAmount(row.totalAmount)}
+        </span>
       ),
     },
     {
       key: 'nearestStore',
       header: 'Magazin',
       render: (row) => (
-        <span className="text-text-secondary text-sm">
-          {row.nearestStore?.name ?? '-'}
-        </span>
+        <span className="text-text-secondary text-sm">{row.nearestStore?.name ?? '-'}</span>
       ),
     },
     {
       key: 'aiSummary',
       header: 'AI summary',
       render: (row) => (
-        <span className="text-text-muted text-xs max-w-[220px] block">
-          {truncate(row.aiSummary, 60)}
+        <span className="text-text-muted text-xs max-w-[200px] block">
+          {truncate(row.aiSummary, 50)}
         </span>
       ),
     },
     {
       key: 'createdAt',
       header: 'Vaqt',
-      render: (row) => <span className="text-xs text-text-muted">{formatRelative(row.createdAt)}</span>,
+      render: (row) => (
+        <span className="text-xs text-text-muted whitespace-nowrap">
+          {formatRelative(row.createdAt)}
+        </span>
+      ),
     },
   ]
 
@@ -271,7 +312,10 @@ export function LeadsPage() {
             {data ? `Jami ${data.total} ta lead` : 'Yuklanmoqda...'}
           </p>
         </div>
-        <button className="kas-btn-secondary gap-2 w-full sm:w-auto" onClick={() => setIsExportOpen(true)}>
+        <button
+          className="kas-btn-secondary gap-2 w-full sm:w-auto"
+          onClick={() => setIsExportOpen(true)}
+        >
           <Download size={14} />
           Export Excel
         </button>
@@ -314,12 +358,13 @@ export function LeadsPage() {
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40" onClick={closeLead} />
-          <aside className="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border z-50 flex flex-col overflow-y-auto">
+          <aside className="fixed right-0 top-0 h-full w-full max-w-lg bg-surface border-l border-border z-50 flex flex-col overflow-y-auto">
+            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
               <div>
                 <h2 className="text-base font-semibold text-text-primary">Lead tafsilotlari</h2>
                 <p className="text-xs font-mono text-text-muted">
-                  #{selected.id.slice(-6).toUpperCase()}
+                  #{(selected.orderId ?? selected.id).slice(-6).toUpperCase()}
                 </p>
               </div>
               <button onClick={closeLead} className="kas-btn-ghost p-1.5 rounded-md">
@@ -328,16 +373,23 @@ export function LeadsPage() {
             </div>
 
             <div className="p-5 space-y-5 flex-1">
+              {/* 1. Foydalanuvchi */}
               <div className="kas-card p-4 space-y-2.5">
                 <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
                   Foydalanuvchi
                 </h3>
                 <Row label="Ism" value={selected.fullName} />
-                {selected.username && <Row label="Username" value={`@${selected.username}`} mono />}
-                {selected.phone && <Row label="Telefon" value={formatPhone(selected.phone)} mono />}
+                {selected.username && (
+                  <Row label="Username" value={`@${selected.username}`} mono />
+                )}
+                {selected.phone && (
+                  <Row label="Telefon" value={formatPhone(selected.phone)} mono />
+                )}
                 <Row label="Telegram ID" value={selected.telegramId} mono />
+                <Row label="Manba" value={selected.source} />
               </div>
 
+              {/* 2. Magazin */}
               <div className="kas-card p-4 space-y-2.5">
                 <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
                   Magazin
@@ -351,22 +403,82 @@ export function LeadsPage() {
                 )}
               </div>
 
-              <div className="kas-card p-4">
+              {/* 3. Buyurtma xulosasi */}
+              <div className="kas-card p-4 space-y-2.5">
                 <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
-                  Mahsulotlar
+                  Buyurtma xulosasi
                 </h3>
-                <div className="flex flex-wrap gap-2">
-                  {selected.products.map((product) => (
-                    <span
-                      key={product.id}
-                      className="kas-badge bg-primary/10 text-primary border border-primary/20"
-                    >
-                      {product.name}
-                    </span>
-                  ))}
-                </div>
+                <Row
+                  label="Turi"
+                  value={ORDER_TYPE_LABEL[selected.orderType] ?? selected.orderType}
+                />
+                <Row label="Mahsulot turlari" value={`${selected.itemsCount} xil`} />
+                <Row label="Jami miqdor" value={`${selected.totalQuantity} dona`} />
+                <Row label="Jami summa" value={formatAmount(selected.totalAmount)} mono />
               </div>
 
+              {/* 4. Mahsulotlar jadvali */}
+              {selected.orderItems.length > 0 ? (
+                <div className="kas-card p-4">
+                  <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
+                    Mahsulotlar ({selected.orderItems.length})
+                  </h3>
+                  <div className="overflow-x-auto -mx-1">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 px-1 text-text-muted font-medium">#</th>
+                          <th className="text-left py-2 px-1 text-text-muted font-medium min-w-[130px]">
+                            Mahsulot
+                          </th>
+                          <th className="text-left py-2 px-1 text-text-muted font-medium whitespace-nowrap">
+                            Katalog
+                          </th>
+                          <th className="text-left py-2 px-1 text-text-muted font-medium whitespace-nowrap">
+                            O'lcham
+                          </th>
+                          <th className="text-right py-2 px-1 text-text-muted font-medium">
+                            Miqdor
+                          </th>
+                          <th className="text-left py-2 px-1 text-text-muted font-medium">
+                            Birlik
+                          </th>
+                          <th className="text-right py-2 px-1 text-text-muted font-medium whitespace-nowrap">
+                            Narx
+                          </th>
+                          <th className="text-right py-2 px-1 text-text-muted font-medium whitespace-nowrap">
+                            Jami
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selected.orderItems.map((item) => (
+                          <OrderItemRow key={item.index} item={item} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : selected.products.length > 0 ? (
+                // Fallback: eski format uchun badge ko'rinishi
+                <div className="kas-card p-4">
+                  <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
+                    Mahsulotlar
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selected.products.map((product) => (
+                      <span
+                        key={product.id}
+                        className="kas-badge bg-primary/10 text-primary border border-primary/20"
+                      >
+                        {product.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 5. AI Summary */}
               <div className="kas-card p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Bot size={14} className="text-primary" />
@@ -375,42 +487,38 @@ export function LeadsPage() {
                   </h3>
                 </div>
                 <p className="text-sm text-text-secondary leading-relaxed">
-                  {selected.aiSummary}
+                  {selected.aiSummary || '—'}
                 </p>
               </div>
 
-              <div className="kas-card p-4 space-y-2.5">
-                <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
-                  Meta
-                </h3>
-                <Row label="Yaratilgan" value={formatRelative(selected.createdAt)} />
-                <Row label="Manba" value={selected.source} />
-              </div>
-
-              {selected.location && nearestStoresQuery.data && nearestStoresQuery.data.length > 0 && (
-                <div className="kas-card p-4">
-                  <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
-                    Yaqin magazinlar
-                  </h3>
-                  <div className="space-y-2">
-                    {nearestStoresQuery.data.map((store) => (
-                      <button
-                        key={store.id}
-                        type="button"
-                        className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left transition-colors hover:border-primary/30"
-                        onClick={() => {
-                          setEditForm((current) => ({ ...current, storeId: store.id }))
-                          setIsEditOpen(true)
-                        }}
-                      >
-                        <p className="text-sm font-medium text-text-primary">{store.name}</p>
-                        <p className="mt-1 text-xs text-text-secondary">{store.address}</p>
-                      </button>
-                    ))}
+              {/* 6. Yaqin magazinlar */}
+              {selected.location &&
+                nearestStoresQuery.data &&
+                nearestStoresQuery.data.length > 0 && (
+                  <div className="kas-card p-4">
+                    <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
+                      Yaqin magazinlar
+                    </h3>
+                    <div className="space-y-2">
+                      {nearestStoresQuery.data.map((store) => (
+                        <button
+                          key={store.id}
+                          type="button"
+                          className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left transition-colors hover:border-primary/30"
+                          onClick={() => {
+                            setEditForm((current) => ({ ...current, storeId: store.id }))
+                            setIsEditOpen(true)
+                          }}
+                        >
+                          <p className="text-sm font-medium text-text-primary">{store.name}</p>
+                          <p className="mt-1 text-xs text-text-secondary">{store.address}</p>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
+              {/* 7. Amallar */}
               <div className="grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
@@ -437,6 +545,7 @@ export function LeadsPage() {
         </>
       )}
 
+      {/* Export modal */}
       <ModalDialog
         open={isExportOpen}
         title="Leadlarni Excel ga eksport qilish"
@@ -476,6 +585,7 @@ export function LeadsPage() {
         </div>
       </ModalDialog>
 
+      {/* Edit modal */}
       <ModalDialog
         open={isEditOpen}
         title="Leadni tahrirlash"
@@ -505,7 +615,9 @@ export function LeadsPage() {
       >
         <div className="space-y-4">
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Telefon</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+              Telefon
+            </span>
             <input
               className="kas-input"
               value={editForm.phone}
@@ -517,7 +629,9 @@ export function LeadsPage() {
           </label>
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Magazin</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+              Magazin
+            </span>
             <select
               className="kas-input"
               value={editForm.storeId}
@@ -545,7 +659,9 @@ export function LeadsPage() {
                     key={store.id}
                     type="button"
                     className="kas-badge border border-primary/20 bg-primary/10 text-primary"
-                    onClick={() => setEditForm((current) => ({ ...current, storeId: store.id }))}
+                    onClick={() =>
+                      setEditForm((current) => ({ ...current, storeId: store.id }))
+                    }
                   >
                     {store.name}
                   </button>
@@ -555,7 +671,9 @@ export function LeadsPage() {
           )}
 
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">AI summary</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+              AI summary
+            </span>
             <textarea
               className="kas-input min-h-32 resize-none"
               value={editForm.aiSummary}
@@ -570,6 +688,43 @@ export function LeadsPage() {
     </div>
   )
 }
+
+function OrderItemRow({ item }: { item: LeadOrderItem }) {
+  return (
+    <tr className="border-b border-border/50 last:border-0 hover:bg-surface-2/50">
+      <td className="py-2 px-1 text-text-muted">{item.index}</td>
+      <td className="py-2 px-1 text-text-primary">
+        <div className="flex items-center gap-2">
+          {item.imageUrl && (
+            <img
+              src={item.imageUrl}
+              alt={item.productName}
+              className="h-7 w-7 rounded object-cover flex-shrink-0"
+            />
+          )}
+          <div>
+            <p className="font-medium leading-tight">{truncate(item.productName, 28)}</p>
+            {item.category && (
+              <p className="text-text-muted font-normal">{truncate(item.category, 22)}</p>
+            )}
+          </div>
+        </div>
+      </td>
+      <td className="py-2 px-1 font-mono text-text-secondary">{item.catalogCode ?? '-'}</td>
+      <td className="py-2 px-1 text-text-secondary whitespace-nowrap">{item.sizeLabel ?? '-'}</td>
+      <td className="py-2 px-1 text-right text-text-primary">{item.quantity}</td>
+      <td className="py-2 px-1 text-text-secondary">{item.unit ?? '-'}</td>
+      <td className="py-2 px-1 text-right font-mono text-text-primary whitespace-nowrap">
+        {item.price != null ? Math.round(item.price).toLocaleString('uz-UZ') : '-'}
+      </td>
+      <td className="py-2 px-1 text-right font-mono text-text-primary whitespace-nowrap">
+        {item.lineTotal != null ? Math.round(item.lineTotal).toLocaleString('uz-UZ') : '-'}
+      </td>
+    </tr>
+  )
+}
+
+// ── Excel export helpers ──────────────────────────────────────────────────────
 
 const EXCEL_HEADER_STYLE = [
   'background:#4472C4',
@@ -616,9 +771,7 @@ function parseCsvRows(text: string): string[][] {
     }
 
     if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        index += 1
-      }
+      if (char === '\r' && nextChar === '\n') index += 1
       currentRow.push(currentCell)
       rows.push(currentRow)
       currentRow = []
@@ -640,8 +793,8 @@ function parseCsvRows(text: string): string[][] {
 function buildExcelDocument(headers: string[], rows: string[][]): string {
   const headerCells = headers
     .map(
-      (header) =>
-        `<th bgcolor="#4472C4" style="${EXCEL_HEADER_STYLE}">${escapeExcelCell(header)}</th>`
+      (h) =>
+        `<th bgcolor="#4472C4" style="${EXCEL_HEADER_STYLE}">${escapeExcelCell(h)}</th>`
     )
     .join('')
 
@@ -655,7 +808,7 @@ function buildExcelDocument(headers: string[], rows: string[][]): string {
     .join('')
 
   return [
-    '\uFEFF',
+    '﻿',
     '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">',
     '<head>',
     '<meta charset="UTF-8" />',

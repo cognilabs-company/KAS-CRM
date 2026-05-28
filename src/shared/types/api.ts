@@ -117,6 +117,7 @@ export interface Lead {
   products: Array<{ id: string; name: string }>
   orderItems: LeadOrderItem[]
   orderId: string | null
+  orderType: 'single_order' | 'multiorder'
   isMultiorder: boolean
   itemsCount: number
   totalQuantity: number
