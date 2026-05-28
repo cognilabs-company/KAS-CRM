@@ -58,7 +58,8 @@ export function getInitials(name: string): string {
     .slice(0, 2)
 }
 
-export function truncate(str: string, length: number): string {
+export function truncate(str: string | null | undefined, length: number): string {
+  if (!str) return ''
   return str.length > length ? str.slice(0, length) + '...' : str
 }
 

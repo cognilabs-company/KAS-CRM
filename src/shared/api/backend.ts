@@ -523,9 +523,11 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
   const lastName = item.last_name ?? undefined
   const userId = 'user_id' in item ? (item as BackendLeadResponse).user_id : undefined
   const isNewFormat = 'products_preview' in item
-  const productNames: string[] = isNewFormat
-    ? (item as BackendLeadListItem).products_preview
-    : (item.interested_products as string[])
+  const rawNames: string[] = isNewFormat
+    ? ((item as BackendLeadListItem).products_preview ?? [])
+    : (item.interested_products as string[]) ?? []
+  const productNames = rawNames.filter((n): n is string => typeof n === 'string' && n.length > 0)
+  const rawOrderItems = isNewFormat ? ((item as BackendLeadListItem).order_items ?? []) : []
   return {
     id: item.id,
     telegramId: String(item.telegram_id),
@@ -540,9 +542,7 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
       id: `${item.id}-product-${index}`,
       name: productName,
     })),
-    orderItems: isNewFormat
-      ? (item as BackendLeadListItem).order_items.map(mapLeadOrderItem)
-      : [],
+    orderItems: rawOrderItems.map(mapLeadOrderItem),
     orderId: isNewFormat ? (item as BackendLeadListItem).order_id : null,
     isMultiorder: isNewFormat ? (item as BackendLeadListItem).is_multiorder : false,
     itemsCount: isNewFormat ? (item as BackendLeadListItem).items_count : productNames.length,
