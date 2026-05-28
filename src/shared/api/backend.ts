@@ -69,7 +69,7 @@ export interface BackendDashboardLeadItem {
   lead_source: string
   store_id?: string | null
   store_name?: string | null
-  interested_products: string[]
+  interested_products: Array<string | BackendOrderSnapshot>
   ai_summary: string
   created_at: string
 }
@@ -525,7 +525,9 @@ export function mapLeadListItem(item: BackendLeadListItem | BackendDashboardLead
   const isNewFormat = 'products_preview' in item
   const rawNames: string[] = isNewFormat
     ? ((item as BackendLeadListItem).products_preview ?? [])
-    : (item.interested_products as string[]) ?? []
+    : (item.interested_products ?? []).map((p) =>
+        typeof p === 'string' ? p : (p as BackendOrderSnapshot).product_name
+      )
   const productNames = rawNames.filter((n): n is string => typeof n === 'string' && n.length > 0)
   const rawOrderItems = isNewFormat ? ((item as BackendLeadListItem).order_items ?? []) : []
   return {
