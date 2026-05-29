@@ -702,9 +702,10 @@ export function StoresPage() {
               <input
                 type="number"
                 step="0.000001"
-                className="kas-input"
+                className="kas-input cursor-not-allowed bg-surface-2"
                 value={form.latitude}
-                onChange={(event) => updateForm('latitude', event.target.value)}
+                readOnly
+                tabIndex={-1}
                 required
               />
             </FormField>
@@ -713,9 +714,10 @@ export function StoresPage() {
               <input
                 type="number"
                 step="0.000001"
-                className="kas-input"
+                className="kas-input cursor-not-allowed bg-surface-2"
                 value={form.longitude}
-                onChange={(event) => updateForm('longitude', event.target.value)}
+                readOnly
+                tabIndex={-1}
                 required
               />
             </FormField>
@@ -897,11 +899,10 @@ export function StoresPage() {
               <input
                 type="number"
                 step="0.000001"
-                className="kas-input"
+                className="kas-input cursor-not-allowed bg-surface-2"
                 value={editForm.latitude}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, latitude: event.target.value }))
-                }
+                readOnly
+                tabIndex={-1}
                 required
               />
             </FormField>
@@ -910,11 +911,10 @@ export function StoresPage() {
               <input
                 type="number"
                 step="0.000001"
-                className="kas-input"
+                className="kas-input cursor-not-allowed bg-surface-2"
                 value={editForm.longitude}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, longitude: event.target.value }))
-                }
+                readOnly
+                tabIndex={-1}
                 required
               />
             </FormField>
