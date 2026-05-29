@@ -238,6 +238,7 @@ export interface Store {
   id: string
   name: string
   contactPerson: string
+  secondaryContactPerson?: string
   phone: string
   phoneAlt?: string
   phoneSecondary?: string
@@ -252,7 +253,7 @@ export interface Store {
     to: string
     raw: string
   }
-  productTypes?: Partial<Record<ProductType, boolean>>
+  productTypes?: Record<string, boolean>
   telegramId?: string | number
   telegramGroupId?: string | number
   leadsCount: number

@@ -121,6 +121,7 @@ export interface BackendStoreListItem {
 
 export interface BackendStoreResponse extends BackendStoreListItem {
   responsible_person: string
+  secondary_responsible_person?: string | null
   phone_secondary?: string | null
   working_hours?: string | null
   telegram_id?: number | null
@@ -742,6 +743,7 @@ export function mapStoreResponse(item: BackendStoreResponse): Store {
   return {
     ...store,
     contactPerson: item.responsible_person,
+    secondaryContactPerson: item.secondary_responsible_person ?? undefined,
     phoneSecondary: item.phone_secondary ?? undefined,
     phoneAlt: item.phone_secondary ?? undefined,
     workingHours: splitWorkingHours(item.working_hours),

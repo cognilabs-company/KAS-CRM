@@ -233,24 +233,12 @@ export function YandexMapPicker({
           className="h-80 w-full bg-surface"
         />
 
-        <div className="grid gap-3 border-t border-border px-4 py-3 md:grid-cols-3">
-          <div className="rounded-xl border border-border bg-surface px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wider text-text-muted">Latitude</p>
-            <p className="mt-1 font-mono text-sm text-text-primary">{latitude.toFixed(6)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-surface px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wider text-text-muted">Longitude</p>
-            <p className="mt-1 font-mono text-sm text-text-primary">{longitude.toFixed(6)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-surface px-3 py-2">
-            <div className="flex items-center gap-2">
-              <LocateFixed size={13} className="text-primary" />
-              <p className="text-[11px] uppercase tracking-wider text-text-muted">Holat</p>
-            </div>
-            <p className="mt-1 text-sm text-text-primary">
-              {apiKey ? 'API key orqali yuklandi' : 'Fallback script orqali yuklandi'}
-            </p>
-          </div>
+        <div className="flex items-center gap-2 border-t border-border px-4 py-3">
+          <LocateFixed size={13} className="text-primary" />
+          <p className="text-[11px] uppercase tracking-wider text-text-muted">Holat:</p>
+          <p className="text-sm text-text-primary">
+            {apiKey ? 'API key orqali yuklandi' : 'Fallback script orqali yuklandi'}
+          </p>
         </div>
       </div>
 

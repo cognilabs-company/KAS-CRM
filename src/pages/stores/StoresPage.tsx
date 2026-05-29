@@ -19,11 +19,18 @@ import { DataTable, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 import { StatusBadge } from '@shared/ui/StatusBadge'
 import { YandexMapPicker } from '@shared/ui/YandexMapPicker'
-import type { ProductType, Store } from '@shared/types/api'
+import type { Store } from '@shared/types/api'
+
+type ContactField =
+  | 'responsiblePerson'
+  | 'phone'
+  | 'secondaryResponsiblePerson'
+  | 'phoneSecondary'
 
 interface StoreFormState {
   name: string
   responsiblePerson: string
+  secondaryResponsiblePerson: string
   phone: string
   phoneSecondary: string
   address: string
@@ -34,12 +41,13 @@ interface StoreFormState {
   telegramId: string
   telegramGroupId: string
   isActive: boolean
-  productTypes: Record<ProductType, boolean>
+  productTypes: string[]
 }
 
 const INITIAL_STORE_FORM: StoreFormState = {
   name: '',
   responsiblePerson: '',
+  secondaryResponsiblePerson: '',
   phone: '+998',
   phoneSecondary: '',
   address: '',
@@ -50,18 +58,192 @@ const INITIAL_STORE_FORM: StoreFormState = {
   telegramId: '',
   telegramGroupId: '',
   isActive: true,
-  productTypes: {
-    fiting: true,
-    truba: true,
-    other: false,
-  },
+  productTypes: [],
 }
 
-const PRODUCT_TYPE_OPTIONS: Array<{ key: ProductType; label: string }> = [
-  { key: 'fiting', label: 'Fiting' },
-  { key: 'truba', label: 'Truba' },
-  { key: 'other', label: 'Boshqa' },
-]
+function productTypesToRecord(types: string[]): Record<string, boolean> {
+  return types.reduce<Record<string, boolean>>((accumulator, type) => {
+    accumulator[type] = true
+    return accumulator
+  }, {})
+}
+
+function productTypesToList(record?: Record<string, boolean>): string[] {
+  if (!record) return []
+  return Object.entries(record)
+    .filter(([, enabled]) => enabled)
+    .map(([type]) => type)
+}
+
+function ProductTypesField({
+  values,
+  onChange,
+}: {
+  values: string[]
+  onChange: (next: string[]) => void
+}) {
+  const [draft, setDraft] = useState('')
+
+  function addType() {
+    const value = draft.trim()
+    if (!value) return
+    if (!values.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
+      onChange([...values, value])
+    }
+    setDraft('')
+  }
+
+  function removeType(value: string) {
+    onChange(values.filter((existing) => existing !== value))
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          className="kas-input"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              addType()
+            }
+          }}
+          placeholder="Mahsulot turini yozing (masalan: Fiting)"
+        />
+        <button
+          type="button"
+          className="kas-btn-secondary shrink-0"
+          onClick={addType}
+          title="Qo'shish"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      {values.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {values.map((value) => (
+            <span
+              key={value}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-sm text-text-primary"
+            >
+              {value}
+              <button
+                type="button"
+                onClick={() => removeType(value)}
+                className="text-text-muted transition-colors hover:text-danger"
+                title="O'chirish"
+              >
+                <X size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ContactFields({
+  responsiblePerson,
+  phone,
+  secondaryResponsiblePerson,
+  phoneSecondary,
+  onChange,
+}: {
+  responsiblePerson: string
+  phone: string
+  secondaryResponsiblePerson: string
+  phoneSecondary: string
+  onChange: (field: ContactField, value: string) => void
+}) {
+  const hasSecondary = Boolean(secondaryResponsiblePerson.trim() || phoneSecondary.trim())
+  const [expanded, setExpanded] = useState(hasSecondary)
+
+  useEffect(() => {
+    if (hasSecondary) setExpanded(true)
+  }, [hasSecondary])
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-4 md:grid-cols-2">
+        <FormField label="Mas'ul shaxs" required>
+          <input
+            className="kas-input"
+            value={responsiblePerson}
+            onChange={(event) => onChange('responsiblePerson', event.target.value)}
+            placeholder="Bekzod Karimov"
+            required
+          />
+        </FormField>
+
+        <FormField label="Telefon" required>
+          <input
+            className="kas-input"
+            value={phone}
+            onChange={(event) => onChange('phone', event.target.value)}
+            placeholder="+998712345678"
+            required
+          />
+        </FormField>
+      </div>
+
+      {!expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="kas-btn-ghost inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-primary"
+        >
+          <Plus size={14} />
+          Qo&apos;shimcha mas&apos;ul shaxs va telefon
+        </button>
+      )}
+
+      <div
+        className={`grid transition-all duration-300 ease-out ${
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="grid gap-4 pt-1 md:grid-cols-2">
+            <FormField label="Qo'shimcha mas'ul shaxs">
+              <input
+                className="kas-input"
+                value={secondaryResponsiblePerson}
+                onChange={(event) => onChange('secondaryResponsiblePerson', event.target.value)}
+                placeholder="Dilnoza Yusupova"
+              />
+            </FormField>
+
+            <FormField label="Qo'shimcha telefon">
+              <input
+                className="kas-input"
+                value={phoneSecondary}
+                onChange={(event) => onChange('phoneSecondary', event.target.value)}
+                placeholder="+998901112233"
+              />
+            </FormField>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onChange('secondaryResponsiblePerson', '')
+              onChange('phoneSecondary', '')
+              setExpanded(false)
+            }}
+            className="kas-btn-ghost mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-muted transition-colors hover:text-danger"
+          >
+            <X size={14} />
+            Qo&apos;shimchani olib tashlash
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function StoresPage() {
   const [searchParams] = useSearchParams()
@@ -107,6 +289,7 @@ export function StoresPage() {
     setEditForm({
       name: selectedStore.name,
       responsiblePerson: selectedStore.contactPerson,
+      secondaryResponsiblePerson: selectedStore.secondaryContactPerson ?? '',
       phone: selectedStore.phone,
       phoneSecondary: selectedStore.phoneSecondary ?? '',
       address: selectedStore.address,
@@ -117,11 +300,7 @@ export function StoresPage() {
       telegramId: selectedStore.telegramId ? String(selectedStore.telegramId) : '',
       telegramGroupId: selectedStore.telegramGroupId ? String(selectedStore.telegramGroupId) : '',
       isActive: selectedStore.isActive,
-      productTypes: {
-        fiting: Boolean(selectedStore.productTypes?.fiting),
-        truba: Boolean(selectedStore.productTypes?.truba),
-        other: Boolean(selectedStore.productTypes?.other),
-      },
+      productTypes: productTypesToList(selectedStore.productTypes),
     })
   }, [selectedStore])
 
@@ -130,6 +309,7 @@ export function StoresPage() {
       api.post('/admin/stores/', {
         name: payload.name.trim(),
         responsible_person: payload.responsiblePerson.trim(),
+        secondary_responsible_person: payload.secondaryResponsiblePerson.trim() || undefined,
         phone: payload.phone.trim(),
         phone_secondary: payload.phoneSecondary.trim() || undefined,
         address: payload.address.trim(),
@@ -140,7 +320,7 @@ export function StoresPage() {
         telegram_id: payload.telegramId.trim() ? Number(payload.telegramId) : undefined,
         telegram_group_id: payload.telegramGroupId.trim() ? Number(payload.telegramGroupId) : undefined,
         is_active: payload.isActive,
-        product_types: payload.productTypes,
+        product_types: productTypesToRecord(payload.productTypes),
       }),
     onSuccess: () => {
       toast.success("Magazin qo'shildi")
@@ -167,6 +347,7 @@ export function StoresPage() {
       api.patch(`/admin/stores/${selectedStoreId}`, {
         name: payload.name.trim(),
         responsible_person: payload.responsiblePerson.trim(),
+        secondary_responsible_person: payload.secondaryResponsiblePerson.trim() || undefined,
         phone: payload.phone.trim(),
         phone_secondary: payload.phoneSecondary.trim() || undefined,
         address: payload.address.trim(),
@@ -177,7 +358,7 @@ export function StoresPage() {
         telegram_id: payload.telegramId.trim() ? Number(payload.telegramId) : undefined,
         telegram_group_id: payload.telegramGroupId.trim() ? Number(payload.telegramGroupId) : undefined,
         is_active: payload.isActive,
-        product_types: payload.productTypes,
+        product_types: productTypesToRecord(payload.productTypes),
       }),
     onSuccess: () => {
       toast.success('Magazin yangilandi')
@@ -190,16 +371,6 @@ export function StoresPage() {
 
   function updateForm<K extends keyof StoreFormState>(key: K, value: StoreFormState[K]) {
     setForm((previous) => ({ ...previous, [key]: value }))
-  }
-
-  function updateProductType(type: ProductType, checked: boolean) {
-    setForm((previous) => ({
-      ...previous,
-      productTypes: {
-        ...previous.productTypes,
-        [type]: checked,
-      },
-    }))
   }
 
   function handleMapSelect(coords: { latitude: number; longitude: number }) {
@@ -354,6 +525,9 @@ export function StoresPage() {
 
                 <div className="space-y-2.5">
                   <DrawerRow label="Mas'ul shaxs" value={selectedStore.contactPerson} />
+                  {selectedStore.secondaryContactPerson && (
+                    <DrawerRow label="Qo'shimcha mas'ul shaxs" value={selectedStore.secondaryContactPerson} />
+                  )}
                   <DrawerRow label="Telefon" value={formatPhone(selectedStore.phone)} mono />
                   {selectedStore.phoneSecondary && (
                     <DrawerRow label="Qo'shimcha telefon" value={formatPhone(selectedStore.phoneSecondary)} mono />
@@ -405,9 +579,9 @@ export function StoresPage() {
               <div className="kas-card space-y-3 p-4">
                 <h3 className="text-xs font-medium uppercase tracking-wider text-text-muted">Mahsulot turlari</h3>
                 <div className="flex flex-wrap gap-2">
-                  {PRODUCT_TYPE_OPTIONS.filter((option) => selectedStore.productTypes?.[option.key]).map((option) => (
-                    <span key={option.key} className="kas-badge border border-primary/20 bg-primary/10 text-primary">
-                      {option.label}
+                  {productTypesToList(selectedStore.productTypes).map((type) => (
+                    <span key={type} className="kas-badge border border-primary/20 bg-primary/10 text-primary">
+                      {type}
                     </span>
                   ))}
                 </div>
@@ -456,35 +630,6 @@ export function StoresPage() {
               />
             </FormField>
 
-            <FormField label="Mas'ul shaxs" required>
-              <input
-                className="kas-input"
-                value={form.responsiblePerson}
-                onChange={(event) => updateForm('responsiblePerson', event.target.value)}
-                placeholder="Bekzod Karimov"
-                required
-              />
-            </FormField>
-
-            <FormField label="Telefon" required>
-              <input
-                className="kas-input"
-                value={form.phone}
-                onChange={(event) => updateForm('phone', event.target.value)}
-                placeholder="+998712345678"
-                required
-              />
-            </FormField>
-
-            <FormField label="Qo'shimcha telefon">
-              <input
-                className="kas-input"
-                value={form.phoneSecondary}
-                onChange={(event) => updateForm('phoneSecondary', event.target.value)}
-                placeholder="+998901112233"
-              />
-            </FormField>
-
             <FormField label="Tuman" required>
               <input
                 className="kas-input"
@@ -494,7 +639,17 @@ export function StoresPage() {
                 required
               />
             </FormField>
+          </div>
 
+          <ContactFields
+            responsiblePerson={form.responsiblePerson}
+            phone={form.phone}
+            secondaryResponsiblePerson={form.secondaryResponsiblePerson}
+            phoneSecondary={form.phoneSecondary}
+            onChange={(field, value) => updateForm(field, value)}
+          />
+
+          <div className="grid gap-4 md:grid-cols-2">
             <FormField label="Ish vaqti" required>
               <input
                 className="kas-input"
@@ -568,21 +723,10 @@ export function StoresPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <FormField label="Mahsulot turlari">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {PRODUCT_TYPE_OPTIONS.map((option) => (
-                  <label
-                    key={option.key}
-                    className="flex items-center gap-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.productTypes[option.key]}
-                      onChange={(event) => updateProductType(option.key, event.target.checked)}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
+              <ProductTypesField
+                values={form.productTypes}
+                onChange={(next) => updateForm('productTypes', next)}
+              />
             </FormField>
 
             <FormField label="Holat">
@@ -670,39 +814,6 @@ export function StoresPage() {
               />
             </FormField>
 
-            <FormField label="Mas'ul shaxs" required>
-              <input
-                className="kas-input"
-                value={editForm.responsiblePerson}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, responsiblePerson: event.target.value }))
-                }
-                placeholder="Bekzod Karimov"
-                required
-              />
-            </FormField>
-
-            <FormField label="Telefon" required>
-              <input
-                className="kas-input"
-                value={editForm.phone}
-                onChange={(event) => setEditForm((current) => ({ ...current, phone: event.target.value }))}
-                placeholder="+998712345678"
-                required
-              />
-            </FormField>
-
-            <FormField label="Qo'shimcha telefon">
-              <input
-                className="kas-input"
-                value={editForm.phoneSecondary}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, phoneSecondary: event.target.value }))
-                }
-                placeholder="+998901112233"
-              />
-            </FormField>
-
             <FormField label="Tuman" required>
               <input
                 className="kas-input"
@@ -712,7 +823,17 @@ export function StoresPage() {
                 required
               />
             </FormField>
+          </div>
 
+          <ContactFields
+            responsiblePerson={editForm.responsiblePerson}
+            phone={editForm.phone}
+            secondaryResponsiblePerson={editForm.secondaryResponsiblePerson}
+            phoneSecondary={editForm.phoneSecondary}
+            onChange={(field, value) => setEditForm((current) => ({ ...current, [field]: value }))}
+          />
+
+          <div className="grid gap-4 md:grid-cols-2">
             <FormField label="Ish vaqti">
               <input
                 className="kas-input"
@@ -801,29 +922,12 @@ export function StoresPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <FormField label="Mahsulot turlari">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {PRODUCT_TYPE_OPTIONS.map((option) => (
-                  <label
-                    key={option.key}
-                    className="flex items-center gap-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editForm.productTypes[option.key]}
-                      onChange={(event) =>
-                        setEditForm((current) => ({
-                          ...current,
-                          productTypes: {
-                            ...current.productTypes,
-                            [option.key]: event.target.checked,
-                          },
-                        }))
-                      }
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
+              <ProductTypesField
+                values={editForm.productTypes}
+                onChange={(next) =>
+                  setEditForm((current) => ({ ...current, productTypes: next }))
+                }
+              />
             </FormField>
 
             <FormField label="Holat">
