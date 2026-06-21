@@ -91,6 +91,8 @@ export interface BackendLeadsDynamicsResponse {
 }
 
 export type DashboardRange = '7d' | '30d' | '90d'
+export interface CustomDashboardRange { from: string; to: string }
+export type DashboardPeriod = DashboardRange | CustomDashboardRange
 
 export interface BackendDashboardKPI {
   value: number
@@ -99,7 +101,7 @@ export interface BackendDashboardKPI {
 }
 
 export interface BackendDashboardOverviewResponse {
-  range: DashboardRange
+  range: DashboardRange | 'custom'
   period_start: string
   period_end: string
   leads: BackendDashboardKPI

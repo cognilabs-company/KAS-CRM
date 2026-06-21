@@ -20,7 +20,7 @@ import api from '@shared/api/axios'
 import {
   mapLeadListItem,
   type BackendDashboardOverviewResponse,
-  type DashboardRange,
+  type DashboardPeriod,
 } from '@shared/api/backend'
 import { formatDate, formatRelative, truncate } from '@shared/lib/utils'
 import { DateRangePicker } from '@shared/ui/DateRangePicker'
@@ -41,11 +41,14 @@ function EmptyChart({ text }: { text: string }) {
 }
 
 export function DashboardPage() {
-  const [range, setRange] = useState<DashboardRange>('7d')
+  const [period, setPeriod] = useState<DashboardPeriod>('7d')
   const navigate = useNavigate()
+  const queryParams = typeof period === 'object'
+    ? { date_from: period.from, date_to: period.to }
+    : { range: period }
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['dashboard-overview', range],
-    queryFn: () => api.get<BackendDashboardOverviewResponse>('/admin/dashboard/overview', { params: { range } }).then((response) => response.data),
+    queryKey: ['dashboard-overview', queryParams],
+    queryFn: () => api.get<BackendDashboardOverviewResponse>('/admin/dashboard/overview', { params: queryParams }).then((response) => response.data),
     staleTime: 3 * 60 * 1000,
   })
 
@@ -62,7 +65,7 @@ export function DashboardPage() {
       <div className="mx-auto max-w-[1560px] space-y-5 p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div><h1 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">Boshqaruv paneli</h1><p className="mt-1 text-sm text-text-secondary">Savdo oqimi, mijozlar va magazinlar holati.</p></div>
-          <DateRangePicker value={range} onChange={setRange} />
+          <DateRangePicker value={period} onChange={setPeriod} />
         </div>
         <div className="kas-card flex min-h-72 flex-col items-center justify-center gap-3 p-6 text-center">
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-danger/10 text-danger"><AlertCircle size={22} /></span>
@@ -77,7 +80,7 @@ export function DashboardPage() {
     <div className="mx-auto max-w-[1560px] space-y-5 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[.16em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" /> Jonli ko‘rsatkichlar</div><h1 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">Boshqaruv paneli</h1><p className="mt-1 text-sm text-text-secondary">Savdo oqimi, mijozlar va magazinlar holati.</p></div>
-        <DateRangePicker value={range} onChange={setRange} />
+        <DateRangePicker value={period} onChange={setPeriod} />
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

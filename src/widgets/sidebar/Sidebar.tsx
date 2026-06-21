@@ -77,25 +77,28 @@ function SidebarContent({
         )}
       >
         <div className={cn('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
-          {mobile ? <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg">
+          {mobile ? <div className="flex h-8 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white">
             <img
-              src="/logo.png"
+              src="/Logo-sidebar.jpg"
               alt="KAS CRM"
-              className="h-8 w-8 rounded-full object-cover shadow-sm"
+              className="h-full w-full object-cover"
             />
           </div> : <button
             type="button"
             onClick={onToggleDesktop}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-opacity hover:opacity-80"
+            className={cn(
+              'flex h-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white transition-all hover:border-primary/50',
+              collapsed ? 'w-12' : 'w-16'
+            )}
             aria-label={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
             title={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
           >
-            <img src="/logo.png" alt="KAS CRM" className="h-8 w-8 rounded-full object-cover shadow-sm" />
+            <img src="/Logo-sidebar.jpg" alt="KAS CRM" className="h-full w-full object-cover" />
           </button>}
           {(!collapsed || mobile) && (
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-text-primary leading-tight whitespace-nowrap">
-                KAS CRM
+                CRM
               </p>
               <p className="text-xs text-text-muted leading-tight whitespace-nowrap">
                 by Cognilabs
