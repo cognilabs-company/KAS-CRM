@@ -5,6 +5,7 @@ import {
   MapPin,
   MessageSquare,
   Package,
+  Palette,
   ScrollText,
   Settings2,
   UserCircle,
@@ -22,18 +23,26 @@ interface NavItem {
   path: string
   icon: typeof LayoutDashboard
   pageKey: AdminPage
+  group: 'main' | 'management' | 'system'
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', path: '/', icon: LayoutDashboard, pageKey: 'dashboard' },
-  { label: 'Leadlar', path: '/leads', icon: Users, pageKey: 'leads' },
-  { label: 'Chatlar', path: '/chats', icon: MessageSquare, pageKey: 'chats' },
-  { label: 'Mahsulotlar', path: '/products', icon: Package, pageKey: 'products' },
-  { label: 'Magazinlar', path: '/stores', icon: MapPin, pageKey: 'stores' },
-  { label: 'Foydalanuvchilar', path: '/users', icon: UserCircle, pageKey: 'users' },
-  { label: 'AI Loglar', path: '/ai-logs', icon: ScrollText, pageKey: 'ai_logs' },
-  { label: 'AI Sozlamalar', path: '/ai-settings', icon: Settings2, pageKey: 'ai_settings' },
+  { label: 'Dashboard', path: '/', icon: LayoutDashboard, pageKey: 'dashboard', group: 'main' },
+  { label: 'Leadlar', path: '/leads', icon: Users, pageKey: 'leads', group: 'main' },
+  { label: 'Chatlar', path: '/chats', icon: MessageSquare, pageKey: 'chats', group: 'main' },
+  { label: 'Mahsulotlar', path: '/products', icon: Package, pageKey: 'products', group: 'management' },
+  { label: 'Magazinlar', path: '/stores', icon: MapPin, pageKey: 'stores', group: 'management' },
+  { label: 'Foydalanuvchilar', path: '/users', icon: UserCircle, pageKey: 'users', group: 'management' },
+  { label: 'AI Loglar', path: '/ai-logs', icon: ScrollText, pageKey: 'ai_logs', group: 'system' },
+  { label: 'AI Sozlamalar', path: '/ai-settings', icon: Settings2, pageKey: 'ai_settings', group: 'system' },
+  { label: 'Ko‘rinish', path: '/appearance', icon: Palette, pageKey: 'appearance', group: 'system' },
 ]
+
+const GROUPS = [
+  { key: 'main', label: 'Asosiy' },
+  { key: 'management', label: 'Boshqaruv' },
+  { key: 'system', label: 'Tizim' },
+] as const
 
 interface SidebarContentProps {
   collapsed: boolean
@@ -68,22 +77,21 @@ function SidebarContent({
         )}
       >
         <div className={cn('flex items-center gap-2.5', collapsed && !mobile && 'justify-center')}>
-          <button
-            type="button"
-            onClick={mobile ? undefined : onToggleDesktop}
-            className={cn(
-              'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg',
-              !mobile && 'transition-opacity hover:opacity-80'
-            )}
-            aria-label={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
-            title={mobile ? undefined : collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
-          >
+          {mobile ? <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg">
             <img
-              src="/Logo-sidebar.jpg"
+              src="/logo.png"
               alt="KAS CRM"
-              className="h-7 w-7 rounded-lg object-cover"
+              className="h-8 w-8 rounded-full object-cover shadow-sm"
             />
-          </button>
+          </div> : <button
+            type="button"
+            onClick={onToggleDesktop}
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-opacity hover:opacity-80"
+            aria-label={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
+            title={collapsed ? 'Sidebarni ochish' : "Sidebarni yig'ish"}
+          >
+            <img src="/logo.png" alt="KAS CRM" className="h-8 w-8 rounded-full object-cover shadow-sm" />
+          </button>}
           {(!collapsed || mobile) && (
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-text-primary leading-tight whitespace-nowrap">
@@ -107,9 +115,14 @@ function SidebarContent({
         ) : null}
       </div>
 
-      <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
-        <ul className="space-y-0.5 px-2">
-          {visibleItems.map((item) => (
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-4">
+        {GROUPS.map((group) => {
+          const items = visibleItems.filter((item) => item.group === group.key)
+          if (!items.length) return null
+          return <div key={group.key} className="mb-5 last:mb-0">
+            {(!collapsed || mobile) && <p className="mb-1.5 px-2.5 text-[10px] font-bold uppercase tracking-[.16em] text-text-muted">{group.label}</p>}
+            <ul className="space-y-1">
+          {items.map((item) => (
             <li key={item.path}>
               <NavLink
                 to={item.path}
@@ -117,9 +130,9 @@ function SidebarContent({
                 onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 px-2.5 py-2 rounded-md text-sm font-medium transition-all duration-150',
+                    'relative flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-medium transition-all duration-150',
                     isActive
-                      ? 'bg-primary/10 text-primary'
+                      ? 'bg-primary/10 text-primary shadow-[inset_0_0_0_1px_rgb(var(--primary)/.08)] before:absolute before:-left-2 before:h-5 before:w-0.5 before:rounded-r before:bg-primary'
                       : 'text-text-secondary hover:text-text-primary hover:bg-surface-2',
                     collapsed && !mobile && 'justify-center px-0 w-10 mx-auto'
                   )
@@ -137,8 +150,8 @@ function SidebarContent({
                 )}
               </NavLink>
             </li>
-          ))}
-        </ul>
+          ))}</ul></div>
+        })}
       </nav>
 
       <div className="border-t border-border flex-shrink-0">
@@ -202,8 +215,8 @@ export function Sidebar() {
       {!isMobile ? (
         <aside
           className={cn(
-            'sticky top-0 z-30 hidden h-screen flex-col bg-surface border-r border-border flex-shrink-0 md:flex',
-            isSidebarCollapsed ? 'w-16' : 'w-60'
+            'sidebar-transition sticky top-0 z-30 hidden h-screen flex-col bg-surface/90 backdrop-blur-xl border-r border-border flex-shrink-0 md:flex',
+            isSidebarCollapsed ? 'w-16' : 'w-64'
           )}
         >
           <SidebarContent

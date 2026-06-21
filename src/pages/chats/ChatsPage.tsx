@@ -182,8 +182,7 @@ function useAuthenticatedMediaObjectUrl(rawUrl: string, errorMessage: string) {
     setIsLoading(true)
     setError(null)
 
-    let nextLoadPromise: Promise<string | null>
-    nextLoadPromise = acquireMediaObjectUrl(rawUrl)
+    const nextLoadPromise: Promise<string | null> = acquireMediaObjectUrl(rawUrl)
       .then((nextObjectUrl) => {
         if (loadRequestRef.current !== requestId) {
           releaseMediaObjectUrl(rawUrl)

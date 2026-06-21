@@ -141,7 +141,7 @@ export function LeadsPage() {
       const csvText = await response.data.text()
       const [headers = [], ...rows] = parseCsvRows(csvText)
       const normalizedHeaders = headers.map((h) =>
-        h.replace(/^﻿/, '').trim().toUpperCase()
+        h.replace(/^\uFEFF/, '').trim().toUpperCase()
       )
       const normalizedRows = rows.filter((row) => row.some((cell) => cell.trim().length > 0))
       const blob = new Blob([buildExcelDocument(normalizedHeaders, normalizedRows)], {

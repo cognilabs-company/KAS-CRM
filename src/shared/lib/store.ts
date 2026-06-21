@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AdminPage, AuthSession, AuthUser } from '@shared/types/api'
+import type { AdminPage, AppearancePreferences, AppearanceResponse, AuthSession, AuthUser } from '@shared/types/api'
+import { DEFAULT_APPEARANCE } from '@shared/lib/appearance'
 import {
   ACCESS_TOKEN_STORAGE_KEY,
   REFRESH_TOKEN_STORAGE_KEY,
@@ -11,7 +12,9 @@ import {
 interface UIState {
   isSidebarCollapsed: boolean
   isMobileSidebarOpen: boolean
-  theme: 'dark' | 'light'
+  appearance: AppearancePreferences
+  appearanceCatalog: Pick<AppearanceResponse, 'presets' | 'backgrounds'>
+  isAppearanceOpen: boolean
   readChatIds: string[]
   seenNotificationKeys: string[]
   toggleSidebar: () => void
@@ -19,7 +22,10 @@ interface UIState {
   openMobileSidebar: () => void
   closeMobileSidebar: () => void
   toggleMobileSidebar: () => void
-  toggleTheme: () => void
+  setAppearance: (appearance: AppearancePreferences) => void
+  setAppearanceResponse: (response: AppearanceResponse) => void
+  openAppearance: () => void
+  closeAppearance: () => void
   markChatRead: (chatId: string) => void
   markNotificationSeen: (key: string) => void
 }
@@ -29,7 +35,9 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       isSidebarCollapsed: false,
       isMobileSidebarOpen: false,
-      theme: 'dark',
+      appearance: DEFAULT_APPEARANCE,
+      appearanceCatalog: { presets: [], backgrounds: [] },
+      isAppearanceOpen: false,
       readChatIds: [],
       seenNotificationKeys: [],
       toggleSidebar: () =>
@@ -39,8 +47,13 @@ export const useUIStore = create<UIState>()(
       closeMobileSidebar: () => set({ isMobileSidebarOpen: false }),
       toggleMobileSidebar: () =>
         set((state) => ({ isMobileSidebarOpen: !state.isMobileSidebarOpen })),
-      toggleTheme: () =>
-        set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+      setAppearance: (appearance) => set({ appearance }),
+      setAppearanceResponse: (response) => set({
+        appearance: response.preferences,
+        appearanceCatalog: { presets: response.presets, backgrounds: response.backgrounds },
+      }),
+      openAppearance: () => set({ isAppearanceOpen: true }),
+      closeAppearance: () => set({ isAppearanceOpen: false }),
       markChatRead: (chatId) =>
         set((state) => ({
           readChatIds: state.readChatIds.includes(chatId)
@@ -58,7 +71,7 @@ export const useUIStore = create<UIState>()(
       name: 'kas-ui',
       partialize: (state) => ({
         isSidebarCollapsed: state.isSidebarCollapsed,
-        theme: state.theme,
+        appearance: state.appearance,
         readChatIds: state.readChatIds,
         seenNotificationKeys: state.seenNotificationKeys,
       }),
