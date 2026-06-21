@@ -301,7 +301,9 @@ export function Header() {
           ) : null}
 
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
-          <span className="hidden text-text-muted sm:inline">KAS CRM</span>
+          <span className="hidden h-8 w-20 overflow-hidden rounded-md border border-border bg-white sm:block">
+            <img src="/Logo-sidebar.jpg" alt="KAS" className="h-full w-full object-cover" />
+          </span>
           <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
           <span className="font-medium text-text-primary truncate">
             {segments.length === 0 ? 'Dashboard' : pageLabel}
