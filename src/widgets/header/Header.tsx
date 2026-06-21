@@ -6,11 +6,10 @@ import {
   ChevronRight,
   Menu,
   MessageSquare,
-  Moon,
+  Palette,
   Package,
   Search,
   Store as StoreIcon,
-  Sun,
   Users,
   X,
 } from 'lucide-react'
@@ -48,6 +47,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/users': 'Foydalanuvchilar',
   '/ai-logs': 'AI Loglar',
   '/ai-settings': 'AI Sozlamalar',
+  '/appearance': 'Ko‘rinish',
 }
 
 type SearchResult =
@@ -94,8 +94,7 @@ export function Header() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
-  const theme = useUIStore((state) => state.theme)
-  const toggleTheme = useUIStore((state) => state.toggleTheme)
+  const openAppearance = useUIStore((state) => state.openAppearance)
   const toggleMobileSidebar = useUIStore((state) => state.toggleMobileSidebar)
   const seenNotificationKeys = useUIStore((state) => state.seenNotificationKeys)
   const markNotificationSeen = useUIStore((state) => state.markNotificationSeen)
@@ -288,8 +287,8 @@ export function Header() {
   }
 
   return (
-    <header className="h-14 bg-surface border-b border-border sticky top-0 z-20 flex-shrink-0">
-      <div className="h-full flex items-center justify-between gap-3 px-4 sm:px-6 max-w-content mx-auto">
+    <header className="sticky top-0 z-20 h-16 flex-shrink-0 border-b border-border bg-surface/85 backdrop-blur-xl">
+      <div className="flex h-full items-center justify-between gap-3 px-3 sm:px-5 lg:px-7">
         <div className="flex items-center gap-2 min-w-0">
           {isMobile ? (
             <button
@@ -301,8 +300,8 @@ export function Header() {
             </button>
           ) : null}
 
-          <div className="flex items-center gap-1.5 text-sm min-w-0">
-          <span className="text-text-muted">KAS CRM</span>
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+          <span className="hidden text-text-muted sm:inline">KAS CRM</span>
           <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
           <span className="font-medium text-text-primary truncate">
             {segments.length === 0 ? 'Dashboard' : pageLabel}
@@ -311,7 +310,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div ref={searchRef} className="relative hidden lg:block w-80">
+          <div ref={searchRef} className="relative hidden w-[min(32vw,420px)] lg:block">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               type="text"
@@ -319,7 +318,7 @@ export function Header() {
               onChange={(event) => setSearch(event.target.value)}
               onFocus={() => setIsSearchOpen(true)}
               placeholder="Lead, chat, mahsulot, magazin..."
-              className="kas-input pl-9 pr-9 py-2 text-xs"
+              className="kas-input rounded-xl border-border/80 bg-surface-2/65 py-2.5 pl-9 pr-9 text-xs shadow-inner"
             />
             {search && (
               <button
@@ -382,17 +381,17 @@ export function Header() {
           </div>
 
           <button
-            onClick={toggleTheme}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
-            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            onClick={openAppearance}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-text-muted transition-colors hover:border-border hover:bg-surface-2 hover:text-text-primary"
+            title="Ko‘rinishni sozlash"
           >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            <Palette size={16} />
           </button>
 
           <div ref={notificationsRef} className="relative">
             <button
               onClick={() => setIsNotificationsOpen((prev) => !prev)}
-              className="relative w-8 h-8 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
+              className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-text-muted transition-colors hover:border-border hover:bg-surface-2 hover:text-text-primary"
             >
               <Bell size={16} />
               {notificationCount > 0 && (

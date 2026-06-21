@@ -5,6 +5,8 @@ import { useAuthStore } from '@shared/lib/store'
 import type { AdminPage } from '@shared/types/api'
 import { Header } from '@widgets/header/Header'
 import { Sidebar } from '@widgets/sidebar/Sidebar'
+import { AppearanceDrawer } from '@features/appearance/AppearanceDrawer'
+import { KasLoader } from '@shared/ui/KasLoader'
 
 const loadDashboardPage = () =>
   import('@pages/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage }))
@@ -22,6 +24,8 @@ const loadAiLogsPage = () =>
   import('@pages/ai-logs/AiLogsPage').then((module) => ({ default: module.AiLogsPage }))
 const loadAiSettingsPage = () =>
   import('@pages/ai-settings/AiSettingsPage').then((module) => ({ default: module.AiSettingsPage }))
+const loadAppearancePage = () =>
+  import('@pages/appearance/AppearancePage').then((module) => ({ default: module.AppearancePage }))
 
 const DashboardPage = lazy(loadDashboardPage)
 const LeadsPage = lazy(loadLeadsPage)
@@ -31,6 +35,7 @@ const StoresPage = lazy(loadStoresPage)
 const UsersPage = lazy(loadUsersPage)
 const AiLogsPage = lazy(loadAiLogsPage)
 const AiSettingsPage = lazy(loadAiSettingsPage)
+const AppearancePage = lazy(loadAppearancePage)
 
 const PAGE_PRELOADERS: Record<AdminPage, () => Promise<unknown>> = {
   dashboard: loadDashboardPage,
@@ -41,6 +46,7 @@ const PAGE_PRELOADERS: Record<AdminPage, () => Promise<unknown>> = {
   users: loadUsersPage,
   ai_logs: loadAiLogsPage,
   ai_settings: loadAiSettingsPage,
+  appearance: loadAppearancePage,
 }
 
 const ROUTE_TO_PAGE: Record<string, AdminPage> = {
@@ -52,20 +58,11 @@ const ROUTE_TO_PAGE: Record<string, AdminPage> = {
   '/users': 'users',
   '/ai-logs': 'ai_logs',
   '/ai-settings': 'ai_settings',
+  '/appearance': 'appearance',
 }
 
 function PageLoader() {
-  return (
-    <div className="p-6 space-y-4 animate-pulse">
-      <div className="h-6 bg-surface rounded w-48" />
-      <div className="grid grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="h-28 bg-surface rounded-lg" />
-        ))}
-      </div>
-      <div className="h-64 bg-surface rounded-lg" />
-    </div>
-  )
+  return <div className="grid min-h-[45vh] place-items-center"><KasLoader /></div>
 }
 
 function ProtectedPage({
@@ -125,7 +122,7 @@ function ProtectedLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background/35">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
@@ -140,10 +137,12 @@ function ProtectedLayout() {
               <Route path="/users" element={<ProtectedPage page="users"><UsersPage /></ProtectedPage>} />
               <Route path="/ai-logs" element={<ProtectedPage page="ai_logs"><AiLogsPage /></ProtectedPage>} />
               <Route path="/ai-settings" element={<ProtectedPage page="ai_settings"><AiSettingsPage /></ProtectedPage>} />
+              <Route path="/appearance" element={<ProtectedPage page="appearance"><AppearancePage /></ProtectedPage>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </main>
+        <AppearanceDrawer />
       </div>
     </div>
   )

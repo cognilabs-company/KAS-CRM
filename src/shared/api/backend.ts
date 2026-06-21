@@ -90,6 +90,29 @@ export interface BackendLeadsDynamicsResponse {
   items: Array<{ date: string; count: number }>
 }
 
+export type DashboardRange = '7d' | '30d' | '90d'
+
+export interface BackendDashboardKPI {
+  value: number
+  previous_value: number
+  delta_percent: number
+}
+
+export interface BackendDashboardOverviewResponse {
+  range: DashboardRange
+  period_start: string
+  period_end: string
+  leads: BackendDashboardKPI
+  new_users: BackendDashboardKPI
+  active_chats: BackendDashboardKPI
+  stores: BackendDashboardKPI
+  daily_leads: Array<{ day: string; count: number }>
+  leads_by_district: Array<{ district: string; count: number }>
+  top_products: Array<{ product_name: string; count: number }>
+  leads_by_store: Array<{ store_name: string; count: number }>
+  recent_leads: BackendDashboardLeadItem[]
+}
+
 export interface BackendTelegramUserListItem {
   id: string
   telegram_id: number
@@ -381,7 +404,8 @@ export function normalizeAdminAvailablePages(role: UserRole, pages: AdminPage[] 
   if (role !== 'admin' && role !== 'superadmin') return pages
 
   const adminPages = role === 'admin' ? pages.filter((page) => page !== 'ai_logs') : pages
-  return adminPages.includes('users') ? adminPages : [...adminPages, 'users']
+  const withUsers: AdminPage[] = adminPages.includes('users') ? adminPages : [...adminPages, 'users']
+  return withUsers.includes('appearance') ? withUsers : [...withUsers, 'appearance']
 }
 
 export function buildAbsoluteMediaUrl(url?: string | null) {

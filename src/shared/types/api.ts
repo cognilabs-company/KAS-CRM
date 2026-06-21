@@ -9,6 +9,50 @@ export type AdminPage =
   | 'users'
   | 'ai_logs'
   | 'ai_settings'
+  | 'appearance'
+
+export type ThemeMode = 'light' | 'dark' | 'kas' | 'liquid'
+export type AccentMode = 'kas_blue' | 'graphite' | 'teal' | 'amber' | 'kas_red'
+export type DensityMode = 'compact' | 'comfortable' | 'spacious'
+export type ContainerMode = 'fluid' | 'boxed'
+export type CardStyle = 'outlined' | 'flat' | 'elevated'
+export type MotionMode = 'system' | 'full' | 'reduced'
+export type BackgroundKind = 'none' | 'preset' | 'upload'
+
+export interface AppearancePreferences {
+  theme: ThemeMode
+  accent: AccentMode
+  density: DensityMode
+  container: ContainerMode
+  card_style: CardStyle
+  motion: MotionMode
+  background_kind: BackgroundKind
+  background_value: string | null
+  background_opacity: number
+}
+
+export interface AppearancePreset {
+  id: string
+  label: string
+  value: string
+  recommended_theme: ThemeMode
+}
+
+export interface BackgroundAsset {
+  id: string
+  url: string
+  mime_type: string
+  byte_size: number
+  width: number
+  height: number
+  created_at: string
+}
+
+export interface AppearanceResponse {
+  preferences: AppearancePreferences
+  presets: AppearancePreset[]
+  backgrounds: BackgroundAsset[]
+}
 
 export interface AuthUser {
   id: string
@@ -146,7 +190,7 @@ export type SystemEventType =
   | 'notification_sent'
   | 'voice_deferred'
   | 'photo_shared'
-  | (string & {})
+  | (string & Record<never, never>)
 
 export type ChatMediaKind = 'image' | 'audio'
 

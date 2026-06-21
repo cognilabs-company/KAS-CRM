@@ -11,6 +11,8 @@ interface MetricCardProps {
   iconColor?: string
   sparkline?: number[]
   loading?: boolean
+  context?: string
+  tone?: 'blue' | 'green' | 'amber' | 'red'
 }
 
 export function MetricCard({
@@ -18,9 +20,11 @@ export function MetricCard({
   value,
   trend,
   icon: Icon,
-  iconColor = 'text-primary',
+  iconColor,
   sparkline,
   loading,
+  context = 'oldingi davrga nisbatan',
+  tone = 'blue',
 }: MetricCardProps) {
   if (loading) {
     return (
@@ -36,19 +40,26 @@ export function MetricCard({
   }
 
   const isPositive = (trend ?? 0) >= 0
-  const sparkData = (sparkline ?? Array.from({ length: 7 }, () => Math.random() * 100)).map(
+  const sparkData = (sparkline ?? []).map(
     (v) => ({ v })
   )
+  const toneStyles = {
+    blue: 'bg-primary/10 text-primary',
+    green: 'bg-success/10 text-success',
+    amber: 'bg-warning/10 text-warning',
+    red: 'bg-danger/10 text-danger',
+  }
 
   return (
-    <div className="kas-card p-4 sm:p-5 group hover:border-primary/30 transition-colors">
+    <div className="kas-card relative overflow-hidden p-4 sm:p-5 group hover:-translate-y-0.5 hover:border-primary/30 transition-all duration-200">
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
       <div className="flex items-start justify-between gap-3 mb-3">
         <p className="text-[11px] sm:text-xs font-medium text-text-secondary uppercase tracking-wider">
           {title}
         </p>
         <div
           className={cn(
-            'w-9 h-9 rounded-md flex items-center justify-center bg-surface-2',
+            'w-10 h-10 rounded-xl flex items-center justify-center', toneStyles[tone],
             'group-hover:scale-105 transition-transform'
           )}
         >
@@ -69,13 +80,13 @@ export function MetricCard({
               {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
               <span>
                 {isPositive ? '+' : ''}
-                {trend.toFixed(1)}% bu hafta
+                {Math.abs(trend).toFixed(1)}% {context}
               </span>
             </div>
           )}
         </div>
 
-        <div className="w-16 sm:w-20 h-10 opacity-70">
+        {sparkData.length > 1 && <div className="w-16 sm:w-20 h-10 opacity-70">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={sparkData}>
               <Line
@@ -87,7 +98,7 @@ export function MetricCard({
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+        </div>}
       </div>
     </div>
   )
