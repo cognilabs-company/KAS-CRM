@@ -21,6 +21,7 @@ import { formatPhone, formatRelative, truncate } from '@shared/lib/utils'
 import { SearchInput } from '@shared/ui/Controls'
 import { DataTable, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
+import { Select } from '@shared/ui/Select'
 
 interface LeadEditFormState {
   phone: string
@@ -632,20 +633,20 @@ export function LeadsPage() {
             <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
               Magazin
             </span>
-            <select
-              className="kas-input"
+            <Select
+              aria-label="Magazin"
+              searchable
+              searchPlaceholder="Magazin qidirish..."
               value={editForm.storeId}
-              onChange={(event) =>
-                setEditForm((current) => ({ ...current, storeId: event.target.value }))
-              }
-            >
-              <option value="">Magazin tanlanmagan</option>
-              {(storesQuery.data?.data ?? []).map((store: Store) => (
-                <option key={store.id} value={store.id}>
-                  {store.name} - {store.district}
-                </option>
-              ))}
-            </select>
+              onChange={(storeId) => setEditForm((current) => ({ ...current, storeId }))}
+              options={[
+                { value: '', label: 'Magazin tanlanmagan' },
+                ...(storesQuery.data?.data ?? []).map((store: Store) => ({
+                  value: store.id,
+                  label: `${store.name} - ${store.district}`,
+                })),
+              ]}
+            />
           </label>
 
           {nearestStoresQuery.data && nearestStoresQuery.data.length > 0 && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Grid, ImagePlus, Import, List, Package, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
+import { Grid, ImagePlus, Import, List, ListOrdered, Package, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
@@ -18,6 +18,9 @@ import { ConfirmDialog, SearchInput } from '@shared/ui/Controls'
 import { DataTable, PaginationControls, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
 import { StatusBadge } from '@shared/ui/StatusBadge'
+import { KasLoader } from '@shared/ui/KasLoader'
+import { Select } from '@shared/ui/Select'
+import { CategoryOrderDialog } from '@features/menu-order/CategoryOrderDialog'
 import { cn, truncate } from '@shared/lib/utils'
 import type { ApplicationArea, Product, ProductType } from '@shared/types/api'
 
@@ -84,7 +87,7 @@ interface ProductFormState {
   productType: ProductType
   size: string
   description: string
-  usageArea: ApplicationArea
+  usageArea: ApplicationArea | ''
   material: string
   pressureRating: string
   temperatureRating: string
@@ -123,6 +126,65 @@ function isKnownProductCategory(category: string) {
   return PRODUCT_CATEGORY_OPTIONS.some((option) => option === category)
 }
 
+// Keeps an unknown current category (from the URL or older data) selectable.
+function getCategoryOptions(current: string) {
+  const categories: string[] =
+    current && !isKnownProductCategory(current) ? [current, ...PRODUCT_CATEGORY_OPTIONS] : [...PRODUCT_CATEGORY_OPTIONS]
+  return categories.map((category) => ({ value: category, label: category }))
+}
+
+function productToForm(product: Product): ProductFormState {
+  return {
+    name: product.name,
+    sku: product.sku,
+    category: product.category,
+    productType: product.type,
+    size: product.size ?? '',
+    description: product.description ?? '',
+    usageArea: product.usageArea ?? '',
+    material: product.material ?? '',
+    pressureRating: product.pressureSpec ?? '',
+    temperatureRating: product.temperatureSpec ?? '',
+    price: product.price != null ? String(product.price) : '',
+    productWeight: product.productWeight != null ? String(product.productWeight) : '',
+    isActive: product.isActive,
+    images: [],
+  }
+}
+
+function parseDecimal(value: string) {
+  return Number(value.trim().replace(',', '.'))
+}
+
+// The backend PATCH is partial (exclude_unset), so only fields the admin changed are sent.
+// Untouched empty fields are left out entirely; a field the admin cleared is sent as null.
+function buildProductPatch(initial: ProductFormState, current: ProductFormState) {
+  const patch: Record<string, string | number | boolean | null> = {}
+  const text = (key: string, before: string, after: string) => {
+    if (before.trim() === after.trim()) return
+    patch[key] = after.trim() || null
+  }
+  const decimal = (key: string, before: string, after: string) => {
+    if (before.trim() === after.trim()) return
+    patch[key] = after.trim() ? parseDecimal(after) : null
+  }
+
+  text('name', initial.name, current.name)
+  text('sku', initial.sku, current.sku)
+  text('category', initial.category, current.category)
+  if (initial.productType !== current.productType) patch.product_type = current.productType
+  text('size', initial.size, current.size)
+  text('description', initial.description, current.description)
+  text('usage_area', initial.usageArea, current.usageArea)
+  text('material', initial.material, current.material)
+  text('pressure_rating', initial.pressureRating, current.pressureRating)
+  text('temperature_rating', initial.temperatureRating, current.temperatureRating)
+  decimal('price', initial.price, current.price)
+  decimal('product_weight', initial.productWeight, current.productWeight)
+  if (initial.isActive !== current.isActive) patch.is_active = current.isActive
+  return patch
+}
+
 function getProductImageDeleteUrl(imageUrl: string, productId?: string | null) {
   const trimmedUrl = imageUrl.trim()
 
@@ -159,12 +221,14 @@ export function ProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isCategoryOrderOpen, setIsCategoryOrderOpen] = useState(false)
   const [alternativeId, setAlternativeId] = useState('')
   const [importValue, setImportValue] = useState('')
   const [form, setForm] = useState<ProductFormState>(INITIAL_PRODUCT_FORM)
   const [editForm, setEditForm] = useState<ProductFormState>(INITIAL_PRODUCT_FORM)
+  const [editInitial, setEditInitial] = useState<ProductFormState>(INITIAL_PRODUCT_FORM)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
@@ -223,25 +287,24 @@ export function ProductsPage() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // The edit dialog loads its own copy so it can open straight from a table row or grid card,
+  // without going through the details drawer.
+  const { data: editProduct } = useQuery({
+    queryKey: ['product', editingProductId],
+    queryFn: () =>
+      api
+        .get<BackendProductResponse>(`/admin/products/${editingProductId}`)
+        .then((response) => mapProductResponse(response.data)),
+    enabled: Boolean(editingProductId),
+  })
+  const isEditFormReady = Boolean(editProduct && editProduct.id === editingProductId)
+
   useEffect(() => {
-    if (!selectedProduct) return
-    setEditForm({
-      name: selectedProduct.name,
-      sku: selectedProduct.sku,
-      category: selectedProduct.category,
-      productType: selectedProduct.type,
-      size: selectedProduct.size ?? '',
-      description: selectedProduct.description ?? '',
-      usageArea: selectedProduct.usageArea ?? 'issiq_suv',
-      material: selectedProduct.material ?? '',
-      pressureRating: selectedProduct.pressureSpec ?? '',
-      temperatureRating: selectedProduct.temperatureSpec ?? '',
-      price: selectedProduct.price != null ? String(selectedProduct.price) : '',
-      productWeight: selectedProduct.productWeight != null ? String(selectedProduct.productWeight) : '',
-      isActive: selectedProduct.isActive,
-      images: [],
-    })
-  }, [selectedProduct])
+    if (!editProduct || editProduct.id !== editingProductId) return
+    const nextForm = productToForm(editProduct)
+    setEditForm(nextForm)
+    setEditInitial(nextForm)
+  }, [editProduct, editingProductId])
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/products/${id}`),
@@ -266,10 +329,10 @@ export function ProductsPage() {
         product_type: payload.productType,
         size: payload.size.trim() || undefined,
         description: payload.description.trim(),
-        usage_area: payload.usageArea,
-        material: payload.material.trim(),
-        pressure_rating: payload.pressureRating.trim(),
-        temperature_rating: payload.temperatureRating.trim(),
+        usage_area: payload.usageArea || undefined,
+        material: payload.material.trim() || undefined,
+        pressure_rating: payload.pressureRating.trim() || undefined,
+        temperature_rating: payload.temperatureRating.trim() || undefined,
         price: normalizedPrice,
         product_weight: payload.productWeight.trim()
           ? Number(payload.productWeight.trim().replace(',', '.'))
@@ -300,55 +363,31 @@ export function ProductsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (payload: ProductFormState) => {
-      if (!selectedProductId) {
-        throw new Error('Mahsulot tanlanmagan')
+    mutationFn: async ({ productId, patch, images }: { productId: string; patch: Record<string, unknown>; images: File[] }) => {
+      if (Object.keys(patch).length > 0) {
+        await api.patch<BackendProductResponse>(`/admin/products/${productId}`, patch)
       }
-
-      const updatePayload = {
-        name: payload.name.trim(),
-        sku: payload.sku.trim(),
-        category: payload.category.trim(),
-        product_type: payload.productType,
-        size: payload.size.trim() || undefined,
-        description: payload.description.trim() || undefined,
-        usage_area: payload.usageArea || undefined,
-        material: payload.material.trim() || undefined,
-        pressure_rating: payload.pressureRating.trim() || undefined,
-        temperature_rating: payload.temperatureRating.trim() || undefined,
-        price: payload.price.trim() ? Number(payload.price.trim().replace(',', '.')) : undefined,
-        product_weight: payload.productWeight.trim()
-          ? Number(payload.productWeight.trim().replace(',', '.'))
-          : undefined,
-        is_active: payload.isActive,
+      if (images.length > 0) {
+        const formData = new FormData()
+        images.forEach((file) => formData.append('files', file))
+        await api.post(`/admin/products/${productId}/images`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        })
       }
-
-      if (payload.images.length === 0) {
-        return api.patch<BackendProductResponse>(`/admin/products/${selectedProductId}`, updatePayload)
-      }
-
-      const formData = new FormData()
-      Object.entries(updatePayload).forEach(([key, value]) => {
-        if (value === undefined) return
-        formData.append(key, String(value))
-      })
-      formData.append('replace_existing_images', 'false')
-      payload.images.forEach((file) => formData.append('files', file))
-
-      return api.patch<BackendProductResponse>(`/admin/products/${selectedProductId}`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
     },
-    onSuccess: () => {
+    onSuccess: (_, { productId }) => {
       toast.success('Mahsulot yangilandi')
-      setIsEditOpen(false)
-      setEditForm((current) => ({ ...current, images: [] }))
+      setEditingProductId(null)
       queryClient.invalidateQueries({ queryKey: ['products'] })
-      queryClient.invalidateQueries({ queryKey: ['product', selectedProductId] })
+      queryClient.invalidateQueries({ queryKey: ['product', productId] })
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Mahsulotni yangilab bo'lmadi")),
+    onError: (error, { productId }) => {
+      // Fields may have been saved even if the image upload failed.
+      queryClient.invalidateQueries({ queryKey: ['product', productId] })
+      toast.error(getApiErrorMessage(error, "Mahsulotni yangilab bo'lmadi"))
+    },
   })
 
   const uploadImagesMutation = useMutation({
@@ -480,7 +519,25 @@ export function ProductsPage() {
 
   function handleEditProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    updateMutation.mutate(editForm)
+    if (!editingProductId || !isEditFormReady) return
+    const patch = buildProductPatch(editInitial, editForm)
+    if (Object.keys(patch).length === 0 && editForm.images.length === 0) {
+      toast("O'zgarish yo'q")
+      setEditingProductId(null)
+      return
+    }
+    updateMutation.mutate({ productId: editingProductId, patch, images: editForm.images })
+  }
+
+  function openEditDialog(productId: string) {
+    setEditForm(INITIAL_PRODUCT_FORM)
+    setEditInitial(INITIAL_PRODUCT_FORM)
+    setEditingProductId(productId)
+  }
+
+  function closeEditDialog() {
+    if (updateMutation.isPending) return
+    setEditingProductId(null)
   }
 
   function handlePageSizeChange(nextPageSize: number) {
@@ -547,8 +604,18 @@ export function ProductsPage() {
       render: (row) => (
         <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
           <button
+            className="kas-btn-ghost rounded-md p-1.5"
+            onClick={() => openEditDialog(row.id)}
+            aria-label="Tahrirlash"
+            title="Tahrirlash"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
             className="kas-btn-ghost rounded-md p-1.5 hover:text-danger"
             onClick={() => setDeleteTarget(row)}
+            aria-label="O'chirish"
+            title="O'chirish"
           >
             <Trash2 size={14} />
           </button>
@@ -584,6 +651,10 @@ export function ProductsPage() {
           <p className="page-subtitle">{data ? `${data.total} ta mahsulot` : 'Yuklanmoqda...'}</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <button className="kas-btn-secondary w-full sm:w-auto" onClick={() => setIsCategoryOrderOpen(true)}>
+            <ListOrdered size={16} />
+            Kategoriyalar menyusi
+          </button>
           <button className="kas-btn-secondary w-full sm:w-auto" onClick={() => setIsImportOpen(true)}>
             <Import size={16} />
             Import
@@ -606,41 +677,26 @@ export function ProductsPage() {
           className="w-full lg:w-72"
         />
         <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto">
-          <select
-            className="kas-input w-full lg:w-52"
-            value={categoryFilter}
-            onChange={(event) => {
-              setCategoryFilter(event.target.value)
-              setPage(1)
-            }}
+          <Select
+            className="w-full lg:w-52"
             aria-label="Kategoriya filteri"
-          >
-            <option value="">Barcha kategoriyalar</option>
-            {categoryFilter && !isKnownProductCategory(categoryFilter) ? (
-              <option value={categoryFilter}>{categoryFilter}</option>
-            ) : null}
-            {PRODUCT_CATEGORY_OPTIONS.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
-          <select
-            className="kas-input w-full lg:w-44"
-            value={productTypeFilter}
-            onChange={(event) => {
-              setProductTypeFilter(event.target.value as ProductTypeFilter)
+            value={categoryFilter}
+            onChange={(value) => {
+              setCategoryFilter(value)
               setPage(1)
             }}
+            options={[{ value: '', label: 'Barcha kategoriyalar' }, ...getCategoryOptions(categoryFilter)]}
+          />
+          <Select<ProductTypeFilter>
+            className="w-full lg:w-44"
             aria-label="Mahsulot turi filteri"
-          >
-            <option value="">Barcha turlar</option>
-            {PRODUCT_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            value={productTypeFilter}
+            onChange={(value) => {
+              setProductTypeFilter(value)
+              setPage(1)
+            }}
+            options={[{ value: '', label: 'Barcha turlar' }, ...PRODUCT_TYPE_OPTIONS]}
+          />
         </div>
         {hasActiveProductFilters ? (
           <button className="kas-btn-secondary w-full lg:w-auto" onClick={clearProductFilters}>
@@ -695,13 +751,26 @@ export function ProductsPage() {
                   <p className="mt-0.5 text-xs font-mono text-text-muted">{product.sku}</p>
                   <div className="mt-3 flex items-center justify-between">
                     <StatusBadge variant={product.isActive ? 'active' : 'inactive'} />
-                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex gap-1">
+                      <button
+                        className="kas-btn-ghost rounded p-1"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openEditDialog(product.id)
+                        }}
+                        aria-label="Tahrirlash"
+                        title="Tahrirlash"
+                      >
+                        <Pencil size={13} />
+                      </button>
                       <button
                         className="kas-btn-ghost rounded p-1 hover:text-danger"
                         onClick={(event) => {
                           event.stopPropagation()
                           setDeleteTarget(product)
                         }}
+                        aria-label="O'chirish"
+                        title="O'chirish"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -788,7 +857,7 @@ export function ProductsPage() {
                   </div>
 
                   <div className="mt-4">
-                    <button className="kas-btn-secondary w-full" onClick={() => setIsEditOpen(true)}>
+                    <button className="kas-btn-secondary w-full" onClick={() => selectedProductId && openEditDialog(selectedProductId)}>
                       <Pencil size={14} />
                       Tahrirlash
                     </button>
@@ -863,18 +932,20 @@ export function ProductsPage() {
                   </div>
 
                   <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                    <select
-                      className="kas-input"
+                    <Select
+                      aria-label="Alternativ mahsulot"
+                      searchable
+                      searchPlaceholder="Nom yoki SKU..."
                       value={alternativeId}
-                      onChange={(event) => setAlternativeId(event.target.value)}
-                    >
-                      <option value="">Alternativ mahsulot tanlang</option>
-                      {alternativeOptions.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} - {product.sku}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAlternativeId}
+                      options={[
+                        { value: '', label: 'Alternativ mahsulot tanlang' },
+                        ...alternativeOptions.map((product) => ({
+                          value: product.id,
+                          label: `${product.name} - ${product.sku}`,
+                        })),
+                      ]}
+                    />
                     <button
                       type="button"
                       className="kas-btn-primary sm:w-auto"
@@ -923,6 +994,8 @@ export function ProductsPage() {
         loading={deleteMutation.isPending}
       />
 
+      <CategoryOrderDialog open={isCategoryOrderOpen} onClose={() => setIsCategoryOrderOpen(false)} />
+
       <ModalDialog
         open={isCreateOpen}
         title="Mahsulot qo'shish"
@@ -960,17 +1033,17 @@ export function ProductsPage() {
       </ModalDialog>
 
       <ModalDialog
-        open={isEditOpen}
+        open={editingProductId !== null}
         title="Mahsulotni tahrirlash"
-        description="Maydonlar va tanlangan rasmlar bitta product update endpointi orqali saqlanadi."
-        onClose={() => !updateMutation.isPending && setIsEditOpen(false)}
+        description="Faqat o'zgartirilgan maydonlar saqlanadi. Tanlangan rasmlar mavjud rasmlarga qo'shiladi."
+        onClose={closeEditDialog}
         className="max-w-4xl"
         footer={
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               className="kas-btn-secondary"
-              onClick={() => setIsEditOpen(false)}
+              onClick={closeEditDialog}
               disabled={updateMutation.isPending}
             >
               Bekor qilish
@@ -979,21 +1052,25 @@ export function ProductsPage() {
               type="submit"
               form="edit-product-form"
               className="kas-btn-primary"
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || !isEditFormReady}
             >
               {updateMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
           </div>
         }
       >
-        <ProductForm
-          formId="edit-product-form"
-          form={editForm}
-          onSubmit={handleEditProduct}
-          onChange={updateEditForm}
-          onImageChange={handleEditImageChange}
-          imageHelpText="Tanlangan rasmlar mavjud rasmlarga qo'shiladi."
-        />
+        {isEditFormReady ? (
+          <ProductForm
+            formId="edit-product-form"
+            form={editForm}
+            onSubmit={handleEditProduct}
+            onChange={updateEditForm}
+            onImageChange={handleEditImageChange}
+            imageHelpText="Tanlangan rasmlar mavjud rasmlarga qo'shiladi."
+          />
+        ) : (
+          <div className="grid min-h-[240px] place-items-center"><KasLoader /></div>
+        )}
       </ModalDialog>
 
       <ModalDialog
@@ -1102,49 +1179,42 @@ function ProductForm({
           <input className="kas-input" value={form.sku} onChange={(event) => onChange('sku', event.target.value)} placeholder="PPR-ELB-25" required />
         </FormField>
         <FormField label="Kategoriya" required>
-          <select className="kas-input" value={form.category} onChange={(event) => onChange('category', event.target.value)} required>
-            <option value="" disabled>
-              Kategoriyani tanlang
-            </option>
-            {form.category && !isKnownProductCategory(form.category) ? (
-              <option value={form.category}>{form.category}</option>
-            ) : null}
-            {PRODUCT_CATEGORY_OPTIONS.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="Kategoriya"
+            required
+            placeholder="Kategoriyani tanlang"
+            value={form.category}
+            onChange={(value) => onChange('category', value)}
+            options={getCategoryOptions(form.category)}
+          />
         </FormField>
         <FormField label="Product type" required>
-          <select className="kas-input" value={form.productType} onChange={(event) => onChange('productType', event.target.value as ProductType)}>
-            {PRODUCT_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <Select<ProductType>
+            aria-label="Product type"
+            value={form.productType}
+            onChange={(value) => onChange('productType', value)}
+            options={PRODUCT_TYPE_OPTIONS}
+          />
         </FormField>
         <FormField label="O'lcham">
           <input className="kas-input" value={form.size} onChange={(event) => onChange('size', event.target.value)} placeholder="25mm" />
         </FormField>
-        <FormField label="Usage area" required>
-          <select className="kas-input" value={form.usageArea} onChange={(event) => onChange('usageArea', event.target.value as ApplicationArea)}>
-            {APPLICATION_AREA_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <FormField label="Usage area">
+          <Select<ApplicationArea | ''>
+            aria-label="Usage area"
+            value={form.usageArea}
+            onChange={(value) => onChange('usageArea', value)}
+            options={[{ value: '', label: 'Tanlanmagan' }, ...APPLICATION_AREA_OPTIONS]}
+          />
         </FormField>
-        <FormField label="Material" required>
-          <input className="kas-input" value={form.material} onChange={(event) => onChange('material', event.target.value)} placeholder="PPR" required />
+        <FormField label="Material">
+          <input className="kas-input" value={form.material} onChange={(event) => onChange('material', event.target.value)} placeholder="PPR" />
         </FormField>
-        <FormField label="Pressure rating" required>
-          <input className="kas-input" value={form.pressureRating} onChange={(event) => onChange('pressureRating', event.target.value)} placeholder="PN20" required />
+        <FormField label="Pressure rating">
+          <input className="kas-input" value={form.pressureRating} onChange={(event) => onChange('pressureRating', event.target.value)} placeholder="PN20" />
         </FormField>
-        <FormField label="Temperature rating" required>
-          <input className="kas-input" value={form.temperatureRating} onChange={(event) => onChange('temperatureRating', event.target.value)} placeholder="95C" required />
+        <FormField label="Temperature rating">
+          <input className="kas-input" value={form.temperatureRating} onChange={(event) => onChange('temperatureRating', event.target.value)} placeholder="95C" />
         </FormField>
         <FormField label="Narx" required>
           <input type="number" step="0.01" className="kas-input" value={form.price} onChange={(event) => onChange('price', event.target.value)} placeholder="12500.00" required />

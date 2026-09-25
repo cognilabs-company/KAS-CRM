@@ -36,6 +36,7 @@ import { useIsMobile } from '@shared/lib/useIsMobile'
 import { useDebouncedValue } from '@shared/lib/useDebouncedValue'
 import { formatRelative, getInitials, truncate } from '@shared/lib/utils'
 import { ModalDialog } from '@shared/ui/ModalDialog'
+import { Select } from '@shared/ui/Select'
 import type { ChatUser, Lead, Product, Store } from '@shared/types/api'
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -581,19 +582,15 @@ export function Header() {
 
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wider text-text-muted">Role</span>
-            <select
-              className="kas-input"
+            <Select<CreateAdminFormState['role']>
+              aria-label="Role"
               value={createAdminForm.role}
-              onChange={(event) =>
-                setCreateAdminForm((current) => ({
-                  ...current,
-                  role: event.target.value as CreateAdminFormState['role'],
-                }))
-              }
-            >
-              <option value="admin">Admin</option>
-              <option value="superadmin">Superadmin</option>
-            </select>
+              onChange={(role) => setCreateAdminForm((current) => ({ ...current, role }))}
+              options={[
+                { value: 'admin', label: 'Admin' },
+                { value: 'superadmin', label: 'Superadmin' },
+              ]}
+            />
           </label>
         </div>
       </ModalDialog>

@@ -397,6 +397,59 @@ export interface BackendAiLogStatsResponse {
 
 export type BackendWebhookInfoResponse = Record<string, unknown>
 
+// name_uz/name_ru/icon are raw admin overrides (null = not set); default_* are the built-in
+// values. Effective names: ru = name_ru || default_name, uz = name_uz || name_ru || default_name.
+// Hidden items are still returned so admins can unhide them.
+export interface BackendMenuOrderCategory {
+  position: number
+  slug: string
+  name_uz: string | null
+  name_ru: string | null
+  default_name: string
+  icon: string | null
+  default_icon?: string | null
+  is_hidden: boolean
+  is_edited: boolean
+  count: number
+}
+
+export interface BackendMenuOrderSubcategory {
+  position: number
+  slug: string
+  name_uz: string | null
+  name_ru: string | null
+  default_name: string
+  is_hidden: boolean
+  is_edited: boolean
+  count: number
+}
+
+// PATCH semantics: only sent fields change; null resets a field to its default.
+export interface BackendMenuOrderCategoryPatch {
+  name_uz?: string | null
+  name_ru?: string | null
+  icon?: string | null
+  is_hidden?: boolean
+}
+
+export interface BackendMenuOrderSubcategoryPatch {
+  name_uz?: string | null
+  name_ru?: string | null
+  is_hidden?: boolean
+}
+
+export interface BackendMenuOrderSubcategoriesResponse {
+  category: string
+  scope: string
+  subcategories: BackendMenuOrderSubcategory[]
+}
+
+export interface BackendMenuOrderUpdateResponse {
+  status: string
+  scope: string
+  count: number
+}
+
 export function clearStoredAuth() {
   localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY)
   localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY)

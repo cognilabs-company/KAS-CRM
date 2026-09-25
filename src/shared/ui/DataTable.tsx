@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@shared/lib/utils'
+import { Select } from '@shared/ui/Select'
 
 export interface Column<T> {
   key: keyof T | string
@@ -76,17 +77,17 @@ export function PaginationControls({ pagination }: { pagination: PaginationConfi
         {pagination.onLimitChange ? (
           <label className="flex items-center gap-2 text-xs text-text-muted">
             <span>Sahifada</span>
-            <select
-              className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-primary"
-              value={pagination.limit}
-              onChange={(event) => pagination.onLimitChange?.(Number(event.target.value))}
-            >
-              {(pagination.limitOptions ?? [20, 45, 75, 100]).map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <Select
+              size="sm"
+              className="w-20"
+              aria-label="Sahifadagi qatorlar soni"
+              value={String(pagination.limit)}
+              onChange={(value) => pagination.onLimitChange?.(Number(value))}
+              options={(pagination.limitOptions ?? [20, 45, 75, 100]).map((option) => ({
+                value: String(option),
+                label: String(option),
+              }))}
+            />
             <span>ta</span>
           </label>
         ) : null}

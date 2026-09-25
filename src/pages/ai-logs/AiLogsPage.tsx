@@ -12,6 +12,7 @@ import {
   type BackendPaginated,
 } from '@shared/api/backend'
 import { formatDateTime, formatRelative, truncate } from '@shared/lib/utils'
+import { Select } from '@shared/ui/Select'
 import { MetricCard } from '@shared/ui/MetricCard'
 import { DataTable, type Column } from '@shared/ui/DataTable'
 import { StatusBadge } from '@shared/ui/StatusBadge'
@@ -110,18 +111,20 @@ export function AiLogsPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <select
-          className="kas-input w-full sm:w-48"
+        <Select
+          className="w-full sm:w-48"
+          aria-label="Status filtri"
           value={status}
-          onChange={(event) => {
-            setStatus(event.target.value)
+          onChange={(value) => {
+            setStatus(value)
             setPage(1)
           }}
-        >
-          <option value="">Barcha statuslar</option>
-          <option value="success">Muvaffaqiyatli</option>
-          <option value="error">Xatolik</option>
-        </select>
+          options={[
+            { value: '', label: 'Barcha statuslar' },
+            { value: 'success', label: 'Muvaffaqiyatli' },
+            { value: 'error', label: 'Xatolik' },
+          ]}
+        />
       </div>
 
       <div className="kas-card">

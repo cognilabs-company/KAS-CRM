@@ -21,6 +21,7 @@ import { cn, formatPhone, formatRelative, truncate } from '@shared/lib/utils'
 import { ConfirmDialog, SearchInput } from '@shared/ui/Controls'
 import { DataTable, getVisiblePages, type Column } from '@shared/ui/DataTable'
 import { ModalDialog } from '@shared/ui/ModalDialog'
+import { Select } from '@shared/ui/Select'
 import { StatusBadge } from '@shared/ui/StatusBadge'
 import type { BotUser, ChatUser, UserStatus } from '@shared/types/api'
 
@@ -241,19 +242,21 @@ export function UsersPage() {
           placeholder="Ism, username yoki telefon..."
           className="w-full sm:w-72"
         />
-        <select
-          className="kas-input w-full sm:w-40"
+        <Select
+          className="w-full sm:w-40"
+          aria-label="Status filtri"
           value={status}
-          onChange={(event) => {
-            setStatus(event.target.value)
+          onChange={(value) => {
+            setStatus(value)
             setPage(1)
           }}
-        >
-          <option value="">Barcha statuslar</option>
-          <option value="active">Aktiv</option>
-          <option value="blocked">Bloklangan</option>
-          <option value="test">Test</option>
-        </select>
+          options={[
+            { value: '', label: 'Barcha statuslar' },
+            { value: 'active', label: 'Aktiv' },
+            { value: 'blocked', label: 'Bloklangan' },
+            { value: 'test', label: 'Test' },
+          ]}
+        />
       </div>
       <div className="kas-card">
         <DataTable
@@ -505,17 +508,16 @@ export function UsersPage() {
           </FormField>
 
           <FormField label="Status" required>
-            <select
-              className="kas-input"
+            <Select<UserStatus>
+              aria-label="Status"
               value={form.status}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, status: event.target.value as UserStatus }))
-              }
-            >
-              <option value="active">Aktiv</option>
-              <option value="blocked">Bloklangan</option>
-              <option value="test">Test</option>
-            </select>
+              onChange={(status) => setForm((current) => ({ ...current, status }))}
+              options={[
+                { value: 'active', label: 'Aktiv' },
+                { value: 'blocked', label: 'Bloklangan' },
+                { value: 'test', label: 'Test' },
+              ]}
+            />
           </FormField>
         </div>
       </ModalDialog>
