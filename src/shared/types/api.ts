@@ -10,6 +10,7 @@ export type AdminPage =
   | 'ai_logs'
   | 'ai_settings'
   | 'appearance'
+  | 'aksiya'
 
 export type ThemeMode = 'light' | 'dark' | 'kas' | 'liquid'
 export type AccentMode = 'kas_blue' | 'graphite' | 'teal' | 'amber' | 'kas_red'

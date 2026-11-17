@@ -49,6 +49,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/ai-logs': 'AI Loglar',
   '/ai-settings': 'AI Sozlamalar',
   '/appearance': 'Ko‘rinish',
+  '/aksiya': 'Aksiya 2026',
 }
 
 type SearchResult =

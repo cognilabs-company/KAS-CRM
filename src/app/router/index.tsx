@@ -24,6 +24,8 @@ const loadAiLogsPage = () =>
   import('@pages/ai-logs/AiLogsPage').then((module) => ({ default: module.AiLogsPage }))
 const loadAiSettingsPage = () =>
   import('@pages/ai-settings/AiSettingsPage').then((module) => ({ default: module.AiSettingsPage }))
+const loadAksiyaPage = () =>
+  import('@pages/aksiya/AksiyaPage').then((module) => ({ default: module.AksiyaPage }))
 const loadAppearancePage = () =>
   import('@pages/appearance/AppearancePage').then((module) => ({ default: module.AppearancePage }))
 
@@ -36,6 +38,7 @@ const UsersPage = lazy(loadUsersPage)
 const AiLogsPage = lazy(loadAiLogsPage)
 const AiSettingsPage = lazy(loadAiSettingsPage)
 const AppearancePage = lazy(loadAppearancePage)
+const AksiyaPage = lazy(loadAksiyaPage)
 
 const PAGE_PRELOADERS: Record<AdminPage, () => Promise<unknown>> = {
   dashboard: loadDashboardPage,
@@ -47,6 +50,7 @@ const PAGE_PRELOADERS: Record<AdminPage, () => Promise<unknown>> = {
   ai_logs: loadAiLogsPage,
   ai_settings: loadAiSettingsPage,
   appearance: loadAppearancePage,
+  aksiya: loadAksiyaPage,
 }
 
 const ROUTE_TO_PAGE: Record<string, AdminPage> = {
@@ -59,6 +63,7 @@ const ROUTE_TO_PAGE: Record<string, AdminPage> = {
   '/ai-logs': 'ai_logs',
   '/ai-settings': 'ai_settings',
   '/appearance': 'appearance',
+  '/aksiya': 'aksiya',
 }
 
 function PageLoader() {
@@ -137,6 +142,7 @@ function ProtectedLayout() {
               <Route path="/users" element={<ProtectedPage page="users"><UsersPage /></ProtectedPage>} />
               <Route path="/ai-logs" element={<ProtectedPage page="ai_logs"><AiLogsPage /></ProtectedPage>} />
               <Route path="/ai-settings" element={<ProtectedPage page="ai_settings"><AiSettingsPage /></ProtectedPage>} />
+              <Route path="/aksiya" element={<ProtectedPage page="aksiya"><AksiyaPage /></ProtectedPage>} />
               <Route path="/appearance" element={<ProtectedPage page="appearance"><AppearancePage /></ProtectedPage>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

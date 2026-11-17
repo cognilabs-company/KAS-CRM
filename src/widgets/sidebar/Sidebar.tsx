@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
+  Gift,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -33,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Mahsulotlar', path: '/products', icon: Package, pageKey: 'products', group: 'management' },
   { label: 'Magazinlar', path: '/stores', icon: MapPin, pageKey: 'stores', group: 'management' },
   { label: 'Foydalanuvchilar', path: '/users', icon: UserCircle, pageKey: 'users', group: 'management' },
+  { label: 'Aksiya 2026', path: '/aksiya', icon: Gift, pageKey: 'aksiya', group: 'management' },
   { label: 'AI Loglar', path: '/ai-logs', icon: ScrollText, pageKey: 'ai_logs', group: 'system' },
   { label: 'AI Sozlamalar', path: '/ai-settings', icon: Settings2, pageKey: 'ai_settings', group: 'system' },
   { label: 'Ko‘rinish', path: '/appearance', icon: Palette, pageKey: 'appearance', group: 'system' },
