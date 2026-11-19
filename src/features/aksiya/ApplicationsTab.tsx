@@ -223,7 +223,7 @@ export function ApplicationsTab() {
       render: (row) => (
         <div className="flex items-center gap-2 text-xs text-text-secondary">
           <span className="inline-flex items-center gap-1"><Paperclip size={13} />{row.files_count}</span>
-          {row.has_video ? <Video size={14} className="text-primary" aria-label="Video bor" /> : null}
+          {row.has_video ? <Video size={14} className="text-primary" aria-label="Isbot (rasm/video) bor" /> : null}
         </div>
       ),
     },
@@ -256,7 +256,7 @@ export function ApplicationsTab() {
           {row.has_duplicates ? (
             <span
               className="kas-badge whitespace-nowrap bg-danger/15 font-semibold text-danger"
-              title="Chek yoki video boshqa faol arizada ham bor"
+              title="Chek yoki isbot boshqa faol arizada ham bor"
             >
               ⚠️ Takroriy
             </span>

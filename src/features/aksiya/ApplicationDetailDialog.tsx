@@ -149,6 +149,8 @@ function ApplicationDetailBody({ application }: { application: AksiyaApplication
   })
 
   const participant = application.participant
+  // Proof of use is a photo or a video (stored in the same "video" field).
+  const proofIsImage = Boolean(application.video?.mime_type?.toLowerCase().startsWith('image/'))
   // Files this application reused from an earlier one (red) vs. files a later application reused (amber).
   const mediaRefs = [...application.files.map((file) => file.duplicate_of), application.video?.duplicate_of]
   const copyCount = mediaRefs.filter((refs) => isCopy(refs)).length
@@ -303,29 +305,39 @@ function ApplicationDetailBody({ application }: { application: AksiyaApplication
         </Section>
       ) : null}
 
-      <Section title="Video">
+      <Section title={proofIsImage ? 'Isbot (rasm)' : 'Isbot (video)'}>
         {application.video ? (
           application.video.available && application.video.url ? (
             <div className="space-y-2">
-              <video
-                controls
-                preload="metadata"
-                className="max-h-[420px] w-full rounded-xl border border-border bg-black"
-                src={buildPrivateFileUrl(application.video.url)}
-              />
+              {proofIsImage ? (
+                <a href={buildPrivateFileUrl(application.video.url)} target="_blank" rel="noreferrer">
+                  <img
+                    alt="Isbot rasmi"
+                    className="max-h-[420px] w-full rounded-xl border border-border bg-black object-contain"
+                    src={buildPrivateFileUrl(application.video.url)}
+                  />
+                </a>
+              ) : (
+                <video
+                  controls
+                  preload="metadata"
+                  className="max-h-[420px] w-full rounded-xl border border-border bg-black"
+                  src={buildPrivateFileUrl(application.video.url)}
+                />
+              )}
               <a className="kas-btn-ghost text-xs w-fit" href={buildPrivateFileUrl(application.video.url, true)}>
-                <Download size={14} /> Videoni yuklab olish {formatBytes(application.video.size)}
+                <Download size={14} /> {proofIsImage ? 'Rasmni' : 'Videoni'} yuklab olish {formatBytes(application.video.size)}
               </a>
-              <DuplicateWarning refs={application.video.duplicate_of} subject="Bu video" />
+              <DuplicateWarning refs={application.video.duplicate_of} subject={proofIsImage ? 'Bu rasm' : 'Bu video'} />
             </div>
           ) : (
             <div className="space-y-2">
-              <Unavailable text="Videoni Telegramdan yuklab bo'lmadi" />
-              <DuplicateWarning refs={application.video.duplicate_of} subject="Bu video" />
+              <Unavailable text="Isbotni Telegramdan yuklab bo'lmadi" />
+              <DuplicateWarning refs={application.video.duplicate_of} subject={proofIsImage ? 'Bu rasm' : 'Bu video'} />
             </div>
           )
         ) : (
-          <p className="text-sm text-text-muted">Video yuborilmagan</p>
+          <p className="text-sm text-text-muted">Isbot yuborilmagan</p>
         )}
       </Section>
 
