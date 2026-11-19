@@ -1,10 +1,9 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, FileText, Plus, Save, Search, Trash2, Trophy, Upload, Users, X } from 'lucide-react'
+import { Eye, FileText, Hash, Plus, Save, Search, Trash2, Trophy, Upload, Users, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@shared/api/axios'
 import { getApiErrorMessage } from '@shared/api/errors'
-import type { BackendPaginated } from '@shared/api/backend'
 import {
   AKSIYA_BASE,
   MULTIPART_HEADERS,
@@ -15,7 +14,9 @@ import {
   formatPlainDate,
   formatSom,
   groupDigits,
+  numberKey,
   parseDigits,
+  renderNumberTemplate,
   type AksiyaNumberListItem,
   telegramUserName,
   type AksiyaSettings,
@@ -57,11 +58,13 @@ export function SettingsTab() {
   ])
   const winnersKey = JSON.stringify([settings.winners, settings.winners_published])
   const visibilityKey = JSON.stringify([settings.visibility, settings.visible_users.map((user) => user.telegram_id)])
+  const numberFormatKey = JSON.stringify([settings.number_template, settings.number_formats])
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <VisibilityCard key={visibilityKey} settings={settings} />
       <GeneralSettingsCard key={generalKey} settings={settings} />
+      <NumberFormatCard key={numberFormatKey} settings={settings} />
       <RulesFileCard settings={settings} />
       <WinnersCard key={winnersKey} settings={settings} />
     </div>
@@ -528,6 +531,208 @@ function RulesFileCard({ settings }: { settings: AksiyaSettings }) {
   )
 }
 
+const TEMPLATE_PRESETS = (year: string) =>
+  [
+    { template: '####', hint: 'Oddiy' },
+    { template: '#####', hint: '5 xonali' },
+    { template: `${year}-####`, hint: 'Yil bilan' },
+    { template: `AK${year.slice(2)}-####`, hint: 'Aksiya + yil' },
+    { template: 'KAS-####', hint: 'Brend bilan' },
+    { template: '№####', hint: 'Belgi bilan' },
+  ] as const
+
+function NumberFormatCard({ settings }: { settings: AksiyaSettings }) {
+  const applySettings = useSaveSettings()
+  const year = settings.today.slice(0, 4)
+  const presets = TEMPLATE_PRESETS(year)
+  const [template, setTemplate] = useState(settings.number_template)
+  const [restart, setRestart] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const issuedTotal = settings.number_formats.reduce((sum, era) => sum + era.count, 0)
+  const isPreset = presets.some((preset) => preset.template === template)
+  const [custom, setCustom] = useState(!isPreset)
+
+  const trimmed = template.trim()
+  const counter = restart ? 1 : settings.next_counter
+  const preview = renderNumberTemplate(trimmed, counter)
+  const preview2 = renderNumberTemplate(trimmed, counter + 1)
+  const error = !trimmed
+    ? "Shablonni kiriting"
+    : trimmed.length > 24
+      ? "24 belgidan oshmasin"
+      : !preview
+        ? "Raqam o'rni uchun bitta «#» guruhi bo'lsin (1–8 ta #), masalan 2026-####"
+        : !/^[0-9A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ№ _\-/.#]*$/.test(trimmed)
+          ? "Faqat harf, raqam, probel va - _ / . № belgilari mumkin"
+          : null
+  const unchanged = trimmed === settings.number_template && !restart
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api
+        .put<AksiyaSettings>(`${AKSIYA_BASE}/settings/number-format`, { template: trimmed, restart })
+        .then((response) => response.data),
+    onSuccess: (next) => {
+      setConfirmOpen(false)
+      toast.success(`Shablon saqlandi. Keyingi raqam: ${next.next_number_display}`)
+      applySettings(next)
+    },
+    onError: (err) => {
+      setConfirmOpen(false)
+      toast.error(getApiErrorMessage(err, "Shablonni saqlab bo'lmadi"))
+    },
+  })
+
+  return (
+    <Card
+      title="Raqam shabloni"
+      description="Qatnashchi raqamlari qanday ko'rinishda berilishini tanlang. Avval berilgan raqamlar o'zgarmaydi — yangi shablon faqat bundan keyin beriladigan raqamlarga qo'llanadi."
+      aside={
+        <span className="kas-badge shrink-0 whitespace-nowrap border border-primary/40 font-mono text-primary">
+          Keyingisi: {settings.next_number_display}
+        </span>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {presets.map((preset) => {
+            const active = !custom && template === preset.template
+            return (
+              <button
+                key={preset.template}
+                type="button"
+                onClick={() => {
+                  setCustom(false)
+                  setTemplate(preset.template)
+                }}
+                className={cn(
+                  'rounded-xl border p-3 text-left transition-colors',
+                  active ? 'border-primary bg-primary/5' : 'border-border bg-surface-2/60 hover:border-primary/40'
+                )}
+              >
+                <span className="block font-mono text-sm font-semibold text-text-primary">{renderNumberTemplate(preset.template, 1)}</span>
+                <span className="block text-[11px] text-text-muted">{preset.hint}</span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setCustom(true)}
+            className={cn(
+              'rounded-xl border p-3 text-left transition-colors',
+              custom ? 'border-primary bg-primary/5' : 'border-border bg-surface-2/60 hover:border-primary/40'
+            )}
+          >
+            <span className="flex items-center gap-1 text-sm font-semibold text-text-primary"><Hash size={14} /> O&apos;zim yozaman</span>
+            <span className="block text-[11px] text-text-muted">Istalgan ko&apos;rinish</span>
+          </button>
+        </div>
+
+        {custom ? (
+          <Field label="Shablon" hint="«#» — raqam o'rni (nechta # bo'lsa, shuncha xonali). Masalan: 2026-####, KAS/#####, A-####-UZ">
+            <input
+              className="kas-input font-mono"
+              value={template}
+              maxLength={24}
+              onChange={(event) => setTemplate(event.target.value)}
+              placeholder={`${year}-####`}
+              aria-label="Raqam shabloni"
+            />
+          </Field>
+        ) : null}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([
+            [false, 'Raqamlashni davom ettirish', `Keyingi raqam ${settings.next_counter} dan davom etadi`],
+            [true, '1 dan boshlash', 'Yangi shablonda sanoq 0001 dan boshlanadi'],
+          ] as const).map(([value, title, hint]) => (
+            <label
+              key={String(value)}
+              className={cn(
+                'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors',
+                restart === value ? 'border-primary bg-primary/5' : 'border-border bg-surface-2/60 hover:border-primary/40'
+              )}
+            >
+              <input
+                type="radio"
+                name="aksiya-number-restart"
+                className="mt-0.5 h-4 w-4 accent-[rgb(var(--primary))]"
+                checked={restart === value}
+                onChange={() => setRestart(value)}
+              />
+              <span>
+                <span className="block text-sm font-medium text-text-primary">{title}</span>
+                <span className="block text-xs text-text-muted">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface-2/60 p-4">
+          <p className="text-xs text-text-muted">Yangi raqamlar shunday ko&apos;rinadi:</p>
+          {error ? (
+            <p className="mt-1 text-sm text-danger">{error}</p>
+          ) : (
+            <p className="mt-1 font-mono text-lg font-semibold text-primary">
+              {preview}, {preview2}, ...
+            </p>
+          )}
+        </div>
+
+        {settings.number_formats.length > 0 ? (
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-2/60 text-left text-[11px] uppercase tracking-wider text-text-muted">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Shablon</th>
+                  <th className="px-3 py-2 font-medium">Berilgan raqamlar</th>
+                  <th className="px-3 py-2 text-right font-medium">Soni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settings.number_formats.map((era) => (
+                  <tr key={era.from_number} className="border-t border-border">
+                    <td className="px-3 py-2 font-mono">
+                      {era.template}
+                      {era.is_current ? <span className="kas-badge ml-2 bg-primary/10 font-sans text-primary">hozirgi</span> : null}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-text-secondary">
+                      {era.last_display ? `${era.first_display} – ${era.last_display}` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">{era.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="kas-btn-primary"
+            onClick={() => setConfirmOpen(true)}
+            disabled={Boolean(error) || unchanged || mutation.isPending}
+          >
+            <Save size={15} /> Shablonni saqlash
+          </button>
+        </div>
+      </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Raqam shablonini o'zgartirish"
+        description={`Bundan keyin beriladigan raqamlar: ${preview ?? ''}, ${preview2 ?? ''}, ... ${
+          issuedTotal ? `Avval berilgan ${issuedTotal} ta raqam o'zgarmaydi.` : ''
+        }`}
+        onCancel={() => setConfirmOpen(false)}
+        confirmLabel="Saqlash"
+        onConfirm={() => mutation.mutate()}
+        loading={mutation.isPending}
+      />
+    </Card>
+  )
+}
+
 interface WinnerDraft {
   key: string
   place: string
@@ -551,15 +756,15 @@ function WinnersCard({ settings }: { settings: AksiyaSettings }) {
   const [published, setPublished] = useState(settings.winners_published)
   const [dirty, setDirty] = useState(false)
 
-  const savedByNumber = new Map(settings.winners.map((winner) => [winner.number, winner]))
+  const savedByNumber = new Map(settings.winners.map((winner) => [numberKey(winner.display), winner]))
 
   const parsed = rows.map((row) => ({
     place: parseDigits(row.place),
-    number: parseDigits(row.number),
+    number: row.number.trim(),
     prize: row.prize.trim(),
   }))
   const places = parsed.map((row) => row.place).filter((value): value is number => value != null)
-  const numbers = parsed.map((row) => row.number).filter((value): value is number => value != null)
+  const numbers = parsed.map((row) => numberKey(row.number)).filter(Boolean)
   const error =
     parsed.some((row) => !row.place || !row.number)
       ? "Har bir qatorda o'rin va raqam to'ldirilishi kerak"
@@ -573,7 +778,7 @@ function WinnersCard({ settings }: { settings: AksiyaSettings }) {
     mutationFn: () => {
       const winners: AksiyaWinnerInput[] = parsed.map((row) => ({
         place: row.place as number,
-        number: row.number as number,
+        number: row.number,
         prize: row.prize,
       }))
       return api
@@ -633,11 +838,11 @@ function WinnersCard({ settings }: { settings: AksiyaSettings }) {
                 />
                 <input
                   className="kas-input font-mono"
-                  inputMode="numeric"
                   value={row.number}
-                  onChange={(event) => updateRow(row.key, 'number', event.target.value.replace(/\D/g, ''))}
+                  maxLength={40}
+                  onChange={(event) => updateRow(row.key, 'number', event.target.value)}
                   aria-label={`${index + 1}-qator raqami`}
-                  placeholder="0001"
+                  placeholder={settings.number_formats[0]?.first_display ?? '0001'}
                 />
                 <button type="button" className="kas-btn-ghost px-2 md:order-last" onClick={() => removeRow(row.key)} aria-label="Qatorni o'chirish">
                   <Trash2 size={15} />
@@ -651,7 +856,7 @@ function WinnersCard({ settings }: { settings: AksiyaSettings }) {
                   aria-label={`${index + 1}-qator sovrini`}
                 />
                 <div className="col-span-3 md:col-span-1">
-                  <WinnerParticipant number={parseDigits(row.number)} saved={savedByNumber} />
+                  <WinnerParticipant number={row.number.trim()} saved={savedByNumber} />
                 </div>
               </div>
             ))}
@@ -697,41 +902,47 @@ function WinnersCard({ settings }: { settings: AksiyaSettings }) {
 }
 
 // Shows who owns a typed number: saved winners come resolved from the backend; a newly typed
-// number is looked up via /numbers (search matches the zero-padded number).
+// number («2026-0007», «0007» or «7») is resolved via /numbers/resolve with the template history.
 function WinnerParticipant({
   number,
   saved,
 }: {
-  number: number | null
-  saved: Map<number, AksiyaSettings['winners'][number]>
+  number: string
+  saved: Map<string, AksiyaSettings['winners'][number]>
 }) {
   const debounced = useDebouncedValue(number, 400)
-  const savedWinner = number != null ? saved.get(number) : undefined
+  const savedWinner = number ? saved.get(numberKey(number)) : undefined
   const lookup = useQuery({
-    queryKey: [...aksiyaKeys.numbers, 'lookup', debounced],
+    queryKey: [...aksiyaKeys.numbers, 'resolve', debounced],
     queryFn: ({ signal }) =>
       api
-        .get<BackendPaginated<AksiyaNumberListItem>>(`${AKSIYA_BASE}/numbers`, {
-          params: { search: String(debounced), page: 1, size: 20 },
-          signal,
-        })
-        .then((response) => response.data.items.find((item) => item.number === debounced) ?? null),
-    enabled: debounced != null && debounced > 0 && !savedWinner,
+        .get<AksiyaNumberListItem>(`${AKSIYA_BASE}/numbers/resolve`, { params: { q: debounced }, signal })
+        .then((response) => response.data)
+        .catch((error: { response?: { status?: number } }) => {
+          if (error?.response?.status === 404) return null
+          throw error
+        }),
+    enabled: Boolean(debounced) && !savedWinner,
     staleTime: 60 * 1000,
+    retry: false,
   })
 
-  if (number == null) return <p className="px-1 py-2 text-xs text-text-muted">—</p>
+  if (!number) return <p className="px-1 py-2 text-xs text-text-muted">—</p>
   if (savedWinner?.full_name) {
     return <ParticipantLine name={savedWinner.full_name} phone={savedWinner.phone} />
   }
   if (lookup.isFetching || debounced !== number) return <p className="px-1 py-2 text-xs text-text-muted">Qidirilmoqda...</p>
-  if (lookup.data) return <ParticipantLine name={lookup.data.full_name} phone={lookup.data.phone} />
+  if (lookup.data) {
+    const exact = numberKey(lookup.data.display) === numberKey(number)
+    return <ParticipantLine name={lookup.data.full_name} phone={lookup.data.phone} hint={exact ? undefined : lookup.data.display} />
+  }
   return <p className="px-1 py-2 text-xs text-danger">Bunday raqam berilmagan</p>
 }
 
-function ParticipantLine({ name, phone }: { name: string; phone: string | null }) {
+function ParticipantLine({ name, phone, hint }: { name: string; phone: string | null; hint?: string }) {
   return (
     <p className="truncate px-1 py-2 text-sm text-text-primary">
+      {hint ? <span className="mr-2 font-mono text-xs font-semibold text-primary">{hint}</span> : null}
       {name}
       {phone ? <span className="ml-2 font-mono text-xs text-text-muted">{formatPhone(phone)}</span> : null}
     </p>

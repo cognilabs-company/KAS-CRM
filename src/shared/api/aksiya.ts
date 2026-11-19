@@ -158,11 +158,15 @@ export interface AksiyaNumberListItem {
 
 export interface AksiyaWinnerInput {
   place: number
-  number: number
+  /** Display text («2026-0007») or the plain internal number. */
+  number: number | string
   prize: string
 }
 
-export interface AksiyaWinner extends AksiyaWinnerInput {
+export interface AksiyaWinner {
+  place: number
+  number: number
+  prize: string
   display: string
   full_name: string | null
   phone: string | null
@@ -183,6 +187,31 @@ export interface AksiyaSettings {
   today: string
   visibility: AksiyaVisibility
   visible_users: AksiyaVisibleUser[]
+  number_template: string
+  next_number_display: string
+  next_counter: number
+  number_formats: AksiyaNumberFormat[]
+}
+
+export interface AksiyaNumberFormat {
+  template: string
+  from_number: number
+  first_display: string
+  last_display: string | null
+  count: number
+  is_current: boolean
+}
+
+/** Same rendering as the backend: the «#» run is the zero-padded counter. */
+export function renderNumberTemplate(template: string, counter: number) {
+  const match = /^([^#]*)(#{1,8})([^#]*)$/.exec(template.trim())
+  if (!match) return null
+  return `${match[1]}${String(counter).padStart(match[2].length, '0')}${match[3]}`
+}
+
+/** Comparison key for typed numbers: spaces removed, case-insensitive. */
+export function numberKey(value: string) {
+  return value.replace(/\s+/g, '').toUpperCase()
 }
 
 export type AksiyaVisibility = 'all' | 'selected'
